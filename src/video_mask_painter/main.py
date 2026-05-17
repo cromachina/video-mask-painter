@@ -240,18 +240,125 @@ def format_time(frames, fps):
     fps_digits = int(np.ceil(np.log10(fps + 1)))
     return f'{h:02d}:{m:02d}:{s:02d}:{f:0{fps_digits}d}'
 
+def scale(scale):
+    return np.array([
+        [scale, 0, 0],
+        [0, scale, 0],
+        [0, 0, 1],
+    ], np.float64)
+
+def translate(dx, dy):
+    return np.array([
+        [1, 0, dx],
+        [0, 1, dy],
+        [0, 0, 1],
+    ], np.float64)
+
+def multiply(*matrices):
+    result = np.identity(3, np.float64)
+    for m in reversed(matrices):
+        np.matmul(result, m, result)
+    return result
+
+scroll_zoom_levels = [2 ** (x / 4) for x in range(-28, 21)]
+default_zoom_level = 28
+
 class VideoPlayer(tk.Canvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._video = None
+        self._photo_image = None
+        self._image_array = None
+        self._render_buffer = np.empty((1,1,3), dtype=np.ubyte)
         self._frame_count = 0
         self._fps = 60
-        self._video_id = None
-        self._photo_image = None
+        self._video_id = self.create_image((0, 0), anchor=ttkc.NW)
         self._pos_updated_callback = None
         self._playing = False
+        self._last_mouse_pos = np.array((0.0, 0.0))
+        self._panning_view = False
+        self._view_position = np.array((0.0, 0.0))
+        self._zoom_level = default_zoom_level
         self._timer = asyncio.create_task(self.update_task())
+        self.bind('<Configure>', self.on_resize)
         self.bind('<Destroy>', self.on_destroy)
+        self.bind('<Button-3>', self.on_pan_start)
+        self.bind('<ButtonRelease-3>', self.on_pan_stop)
+        self.bind('<Motion>', self.on_mouse_move)
+        self.bind('<MouseWheel>', self.on_mousewheel)
+        self.bind('<Button-4>', lambda *_: self.previous_frame())
+        self.bind('<Button-5>', lambda *_: self.next_frame())
+        self.bind('<Control-Button-4>', self.on_zoom_in)
+        self.bind('<Control-Button-5>', self.on_zoom_out)
+
+    def apply_transform(self):
+        zoom = scroll_zoom_levels[self._zoom_level]
+        clear_color = (0x33, 0x33, 0x33)
+        if self._video:
+            image = self._image_array
+            canvas_h = self.winfo_height()
+            canvas_w = self.winfo_width()
+            image_size = np.array(self._image_array.shape[:2])
+            matrix = multiply(
+                translate(-image_size[1] * 0.5, -image_size[0] * 0.5),
+                translate(self._view_position[0], self._view_position[1]),
+                scale(zoom),
+                translate(canvas_w * 0.5, canvas_h * 0.5),
+            )
+            height, width = self._render_buffer.shape[:2]
+            cv2.warpAffine(image, matrix[:2], dsize=(width, height), dst=self._render_buffer,
+                borderMode=cv2.BORDER_CONSTANT, borderValue=clear_color, flags=cv2.INTER_AREA)
+        else:
+            self._render_buffer[:,:] = clear_color
+        height, width = self._render_buffer.shape[:2]
+        ppm_header = f'P6 {width} {height} 255 '.encode()
+        data = ppm_header + self._render_buffer.tobytes()
+        self._photo_image = tk.PhotoImage(width=width, height=height, data=data, format='PPM')
+        self.itemconfig(self._video_id, image=self._photo_image)
+
+    def on_zoom_in(self, event):
+        self.zoom(1, event)
+
+    def on_zoom_out(self, event):
+        self.zoom(-1, event)
+
+    def zoom(self, level_delta, event):
+        self._zoom_level += level_delta
+        self._zoom_level = max(self._zoom_level, 0)
+        self._zoom_level = min(self._zoom_level, len(scroll_zoom_levels) - 1)
+        self.apply_transform()
+
+    def on_pan_start(self, event):
+        self._panning_view = True
+
+    def on_pan_stop(self, envent):
+        self._panning_view = False
+
+    def on_mouse_move(self, event:tk.Event):
+        current_pos = np.array((event.x, event.y))
+        if self._panning_view:
+            zoom = scroll_zoom_levels[self._zoom_level]
+            delta = (current_pos - self._last_mouse_pos) / zoom
+            self._view_position += delta
+            self.apply_transform()
+        self._last_mouse_pos = current_pos
+
+    def on_mousewheel(self, event):
+        if event.delta > 0:
+            self.next_frame()
+        else:
+            self.previous_frame()
+
+    def on_resize(self, event):
+        h = self.winfo_height()
+        w = self.winfo_width()
+        self._render_buffer = np.empty((h, w, 3), dtype=np.ubyte)
+        self.apply_transform()
+
+    def reset_view(self):
+        self._zoom_level = default_zoom_level
+        self._view_position = np.array((0.0, 0.0))
+        self.apply_transform()
 
     def on_destroy(self, event):
         self._timer.cancel()
@@ -273,17 +380,19 @@ class VideoPlayer(tk.Canvas):
         self._video = cv2.VideoCapture(str(file_path))
         self._frame_count = self._video.get(cv2.CAP_PROP_FRAME_COUNT)
         self._fps = self._video.get(cv2.CAP_PROP_FPS)
-        self._video_id = self.create_image((0, 0), anchor=ttkc.NW)
+        self.next_frame()
+        self.reset_view()
 
     def close_video(self):
         if self._video is None:
             return
         self._video.release()
         self._video = None
+        self._image_array = None
+        self._photo_image = None
         self._frame_count = 0
         self._fps = 60
-        self.delete(self._video_id)
-        self._video_id = None
+        self.apply_transform()
 
     def get_frame_pos(self):
         if not self._video:
@@ -310,15 +419,12 @@ class VideoPlayer(tk.Canvas):
     def read_frame(self):
         if not self._video:
             return
-        ret, image = self._video.read()
+        ret, image = self._video.read(self._image_array)
         if not ret:
             return
-        height, width = image.shape[:2]
-        ppm_header = f'P6 {width} {height} 255 '.encode()
         cv2.cvtColor(image, cv2.COLOR_BGR2RGB, image)
-        data = ppm_header + image.tobytes()
-        self._photo_image = tk.PhotoImage(width=width, height=height, data=data, format='PPM')
-        self.itemconfig(self._video_id, image=self._photo_image)
+        self._image_array = image
+        self.apply_transform()
         if self._pos_updated_callback:
             self._pos_updated_callback(self.get_frame_pos() / self.get_frame_count())
 
@@ -394,6 +500,7 @@ class App(AsyncTk):
         make_button(button_frame, 'Previous frame', 'arrow-left-short', self.previous_frame)
         make_button(button_frame, 'Next frame', 'arrow-right-short', self.next_frame)
         self.loop_button = make_checkbutton(button_frame, 'Toggle loop video', 'repeat')
+        make_button(button_frame, 'Reset view', 'arrows-fullscreen', self.reset_view)
 
         # TODO FPS field
 
@@ -420,8 +527,6 @@ class App(AsyncTk):
         self.drawing_mode_var = ttk.StringVar(value=self.drawing_mode_draw)
         make_radiobutton(radio_frame, 'Toggle draw', 'pencil', self.drawing_mode_draw, self.drawing_mode_var)
         make_radiobutton(radio_frame, 'Toggle erase', 'eraser', self.drawing_mode_erase, self.drawing_mode_var)
-
-        make_separator(button_frame)
 
         # Brush size selector
         label = ttk.Label(button_frame, text='Brush size')
@@ -456,9 +561,9 @@ class App(AsyncTk):
         self.video_player.set_pos_updated_callback(self.position_updated)
         self.position_updated(0)
 
-        self.bind_all('<MouseWheel>', self.on_mousewheel)
-        self.bind_all('<Button-4>', lambda _: self.previous_frame())
-        self.bind_all('<Button-5>', lambda _: self.next_frame())
+        self.timeline.bind('<MouseWheel>', self.on_mousewheel)
+        self.timeline.bind('<Button-4>', lambda *_: self.previous_frame())
+        self.timeline.bind('<Button-5>', lambda *_: self.next_frame())
 
     def position_updated(self, position):
         self.time_label.config(text=self.video_player.get_time_string())
@@ -469,10 +574,10 @@ class App(AsyncTk):
             title='Open Video',
             filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
         )
+        file_name = '/home/cro/aux/Projects/video-mask-painter/20260227-1.mp4'
         if file_name:
             self.project = ProjectData(video_file_path=file_name)
             self.video_player.open_video(self.project.video_file_path)
-            self.video_player.next_frame()
             self.video_file_name_label.config(text=f'({self.project.video_file_path.name})')
 
     def open_project(self):
@@ -526,6 +631,9 @@ class App(AsyncTk):
 
     def next_frame(self):
         self.video_player.next_frame()
+
+    def reset_view(self):
+        self.video_player.reset_view()
 
     def on_mousewheel(self, event):
         if event.delta > 0:
