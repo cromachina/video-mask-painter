@@ -1,0 +1,36 @@
+[build-system]
+requires = [
+    'setuptools',
+    'wheel',
+]
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = 'video-mask-painter'
+version = '0.0.0'
+authors = [
+    { name = 'cromachina' }
+]
+license = { file = 'LICENSE' }
+description = 'Create a masks and filters for videos by painting them.'
+readme = 'README.md'
+requires-python = '>=3.14'
+dependencies = [
+    'numpy',
+    'opencv-python',
+    'ttkbootstrap',
+    'ttkbootstrap-icons',
+    'ttkbootstrap-icons-bs',
+    'pyrsistent',
+]
+
+[project.optional-dependencies]
+dev = [
+    'pyinstaller',
+]
+
+[project.urls]
+'Homepage' = 'https://github.com/cromachina/video-mask-painter'
+
+[project.scripts]
+video-mask-painter = 'video_mask_painter.main:main'
