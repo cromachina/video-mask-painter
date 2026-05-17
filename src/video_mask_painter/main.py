@@ -16,8 +16,6 @@ import numpy as np
 import cv2
 from pyrsistent import *
 
-from . import asynctk
-
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
 
@@ -347,7 +345,7 @@ class VideoPlayer(tk.Canvas):
         frame = int(self._frame_count * position)
         self.set_frame_pos(frame)
 
-class App(asynctk.AsyncTk):
+class App(AsyncTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title(f'{__package__} {__version__}')
