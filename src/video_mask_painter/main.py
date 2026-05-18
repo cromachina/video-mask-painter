@@ -636,7 +636,6 @@ class App(AsyncTk):
             title='Open Video',
             filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
         )
-        file_name = '/home/cro/aux/Projects/video-mask-painter/20260227-1.mp4'
         if file_name:
             self.project = ProjectData(video_file_path=file_name)
             self.video_player.open_video(self.project.video_file_path)
