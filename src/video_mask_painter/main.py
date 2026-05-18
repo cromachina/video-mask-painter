@@ -30,6 +30,9 @@ class timeit():
         t = int((time.time() - self.start) * 1000)
         print(f'{self.name} {t}')
 
+def clamp(min_val, max_val, val):
+    return max(min_val, min(max_val, val))
+
 class AsyncTk(tk.Tk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -224,7 +227,7 @@ class Timeline(tk.Canvas):
 
     def event_to_position(self, event):
         w = self.winfo_width() - side_pad * 2
-        return min(1.0, max(0.0, (event.x - side_pad) / w))
+        return clamp(0.0, 1.0, (event.x - side_pad) / w)
 
     def update_marker_position(self, event):
         position = self.event_to_position(event)
@@ -274,12 +277,21 @@ def multiply(*matrices):
 scroll_zoom_levels = [2 ** (x / 4) for x in range(-28, 21)]
 default_zoom_level = 28
 
-class VideoPlayer(tk.Canvas):
+def event_vec(event:tk.Event):
+    return np.array((event.x, event.y))
+
+def swap(vec):
+    return np.array((vec[1], vec[0]))
+
+class VideoCanvas(tk.Canvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._video = None
-        self._photo_image = None
-        self._image_array = None
+        self._video_photo_image = None
+        self._video_image_array = None
+        self._mask_image_array = None
+        self._brush_size = 10
+        self._drawing = False
         self._render_buffer = np.empty((1,1,3), dtype=np.ubyte)
         self._frame_count = 0
         self._fps = 60
@@ -293,6 +305,8 @@ class VideoPlayer(tk.Canvas):
         self._timer = asyncio.create_task(self.update_task())
         self.bind('<Configure>', self.on_resize)
         self.bind('<Destroy>', self.on_destroy)
+        self.bind('<Button-1>', self.on_draw_start)
+        self.bind('<ButtonRelease-1>', self.on_draw_stop)
         self.bind('<Button-3>', self.on_pan_start)
         self.bind('<ButtonRelease-3>', self.on_pan_stop)
         self.bind('<Motion>', self.on_mouse_move)
@@ -306,10 +320,14 @@ class VideoPlayer(tk.Canvas):
         zoom = scroll_zoom_levels[self._zoom_level]
         clear_color = (0x33, 0x33, 0x33)
         if self._video:
-            image = self._image_array
+            video_image = self._video_image_array / 255.0
+            mask_image = self._mask_image_array / 255.0
+            #composite = (cv2.multiply(video_image, mask_image) * 255.0).astype(np.ubyte)
+            composite = ((video_image * mask_image) * 255.0).astype(np.ubyte)
+
             canvas_h = self.winfo_height()
             canvas_w = self.winfo_width()
-            image_size = np.array(self._image_array.shape[:2])
+            image_size = np.array(self._video_image_array.shape[:2])
             matrix = multiply(
                 translate(-image_size[1] * 0.5, -image_size[0] * 0.5),
                 translate(self._view_position[0], self._view_position[1]),
@@ -317,15 +335,15 @@ class VideoPlayer(tk.Canvas):
                 translate(canvas_w * 0.5, canvas_h * 0.5),
             )
             height, width = self._render_buffer.shape[:2]
-            cv2.warpAffine(image, matrix[:2], dsize=(width, height), dst=self._render_buffer,
+            cv2.warpAffine(composite, matrix[:2], dsize=(width, height), dst=self._render_buffer,
                 borderMode=cv2.BORDER_CONSTANT, borderValue=clear_color, flags=cv2.INTER_AREA)
         else:
             self._render_buffer[:,:] = clear_color
         height, width = self._render_buffer.shape[:2]
         ppm_header = f'P6 {width} {height} 255 '.encode()
         data = ppm_header + self._render_buffer.tobytes()
-        self._photo_image = tk.PhotoImage(width=width, height=height, data=data, format='PPM')
-        self.itemconfig(self._video_id, image=self._photo_image)
+        self._video_photo_image = tk.PhotoImage(width=width, height=height, data=data, format='PPM')
+        self.itemconfig(self._video_id, image=self._video_photo_image)
 
     def on_zoom_in(self, event):
         self.zoom(1, event)
@@ -335,22 +353,47 @@ class VideoPlayer(tk.Canvas):
 
     def zoom(self, level_delta, event):
         self._zoom_level += level_delta
-        self._zoom_level = max(self._zoom_level, 0)
-        self._zoom_level = min(self._zoom_level, len(scroll_zoom_levels) - 1)
+        self._zoom_level = clamp(0, len(scroll_zoom_levels) - 1, self._zoom_level)
         self.apply_transform()
 
     def on_pan_start(self, event):
         self._panning_view = True
 
-    def on_pan_stop(self, envent):
+    def on_pan_stop(self, event):
         self._panning_view = False
 
+    def mouse_to_view(self, vec):
+        zoom = scroll_zoom_levels[self._zoom_level]
+        canvas_h = self.winfo_height()
+        canvas_w = self.winfo_width()
+        canvas_size = np.array((canvas_w, canvas_h))
+        image_size = np.array(self._video_image_array.shape[:2])
+        return (vec - (canvas_size / 2)) / zoom + (image_size / 2) - self._view_position
+
+    def on_draw_start(self, event):
+        if not self._video:
+            return
+        self._drawing = True
+        self._last_drawing_pos = self.mouse_to_view(event_vec(event))
+
+    def on_draw_stop(self, event):
+        if not self._video:
+            return
+        self._drawing = False
+
     def on_mouse_move(self, event:tk.Event):
-        current_pos = np.array((event.x, event.y))
+        if not self._video:
+            return
+        current_pos = event_vec(event)
         if self._panning_view:
             zoom = scroll_zoom_levels[self._zoom_level]
             delta = (current_pos - self._last_mouse_pos) / zoom
             self._view_position += delta
+            self.apply_transform()
+        elif self._drawing:
+            brush_pos = self.mouse_to_view(current_pos)
+            cv2.line(self._mask_image_array, self._last_drawing_pos.astype(np.int32), brush_pos.astype(np.int32), 0x00, self._brush_size, cv2.LINE_AA)
+            self._last_drawing_pos = brush_pos
             self.apply_transform()
         self._last_mouse_pos = current_pos
 
@@ -364,6 +407,7 @@ class VideoPlayer(tk.Canvas):
         h = self.winfo_height()
         w = self.winfo_width()
         self._render_buffer = np.empty((h, w, 3), dtype=np.ubyte)
+        self._mask_render_buffer = np.empty((h, w, 3), dtype=np.ubyte)
         self.apply_transform()
 
     def reset_view(self):
@@ -396,6 +440,9 @@ class VideoPlayer(tk.Canvas):
         self._video = cv2.VideoCapture(str(file_path))
         self._frame_count = self._video.get(cv2.CAP_PROP_FRAME_COUNT)
         self._fps = self._video.get(cv2.CAP_PROP_FPS)
+        height = int(self._video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        width = int(self._video.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self._mask_image_array = np.full((height, width, 1), fill_value=0xff, dtype=np.ubyte)
         self.next_frame()
         self.reset_view()
 
@@ -404,8 +451,8 @@ class VideoPlayer(tk.Canvas):
             return
         self._video.release()
         self._video = None
-        self._image_array = None
-        self._photo_image = None
+        self._video_image_array = None
+        self._video_photo_image = None
         self._frame_count = 0
         self._fps = 60
         self.apply_transform()
@@ -435,11 +482,10 @@ class VideoPlayer(tk.Canvas):
     def read_frame(self):
         if not self._video:
             return
-        ret, image = self._video.read(self._image_array)
+        ret, self._video_image_array = self._video.read(self._video_image_array)
         if not ret:
             return
-        cv2.cvtColor(image, cv2.COLOR_BGR2RGB, image)
-        self._image_array = image
+        cv2.cvtColor(self._video_image_array, cv2.COLOR_BGR2RGB, self._video_image_array)
         self.apply_transform()
         if self._pos_updated_callback:
             self._pos_updated_callback(self.get_frame_pos() / self.get_frame_count())
@@ -494,7 +540,7 @@ class App(AsyncTk):
         # Click to draw
         # space + click to pan
         # scroll to zoom
-        self.video_player = VideoPlayer(self, width=1, height=1)
+        self.video_player = VideoCanvas(self, width=1, height=1)
         self.video_player.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
