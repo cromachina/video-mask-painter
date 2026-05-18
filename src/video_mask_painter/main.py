@@ -4,6 +4,7 @@ from pathlib import Path
 import threading
 import importlib.metadata
 import time
+import weakref
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -29,6 +30,33 @@ class timeit():
     def __exit__(self, exc_type, exc, tb):
         t = int((time.time() - self.start) * 1000)
         print(f'{self.name} {t}')
+
+class Observable():
+    def __init__(self):
+        self.callbacks = set()
+
+    def add(self, callback):
+        self.callbacks.add(weakref.WeakMethod(callback, self.remove))
+
+    def remove(self, callback):
+        self.callbacks.discard(callback)
+
+    def call(self, *args, **kwargs):
+        for callback in self.callbacks:
+            cb = callback()
+            if cb:
+                cb(*args, **kwargs)
+
+    def __iadd__(self, callback):
+        self.add(callback)
+        return self
+
+    def __isub__(self, callback):
+        self.remove(callback)
+        return self
+
+    def __call__(self, *args, **kwargs):
+        self.call(*args, **kwargs)
 
 def clamp(min_val, max_val, val):
     return max(min_val, min(max_val, val))
@@ -165,7 +193,6 @@ class KeyframeMarker():
 class Timeline(tk.Canvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.bind('<Configure>', self.on_resize)
         self.objects = {}
 
         line_count = 24
@@ -182,10 +209,12 @@ class Timeline(tk.Canvas):
         self.drag_check = False
         self.timer = asyncio.create_task(self.update_task())
 
+        self.bind('<Configure>', self.on_resize)
         self.bind('<Button-1>', self.on_drag_start)
         self.bind('<Motion>', self.on_motion)
         self.bind('<ButtonRelease-1>', self.on_drag_stop)
         self.bind('<Destroy>', self.on_destroy)
+        self.position_updated_event = Observable()
 
     def on_destroy(self, event):
         self.timer.cancel()
@@ -199,9 +228,6 @@ class Timeline(tk.Canvas):
 
     def set_position(self, position):
         self.position_marker.set_position(position)
-
-    def set_pos_updated_callback(self, cb):
-        self.pos_updated_callback = cb
 
     def on_drag_start(self, event):
         self.on_click(event)
@@ -236,8 +262,7 @@ class Timeline(tk.Canvas):
 
     def on_click(self, event):
         position = self.update_marker_position(event)
-        if self.pos_updated_callback:
-            self.pos_updated_callback(position)
+        self.position_updated_event(position)
 
     def add_keyframe(self, position):
         return KeyframeMarker(self, position)
@@ -296,7 +321,6 @@ class VideoCanvas(tk.Canvas):
         self._frame_count = 0
         self._fps = 60
         self._video_id = self.create_image((0, 0), anchor=ttkc.NW)
-        self._pos_updated_callback = None
         self._playing = False
         self._last_mouse_pos = np.array((0.0, 0.0))
         self._panning_view = False
@@ -315,6 +339,7 @@ class VideoCanvas(tk.Canvas):
         self.bind('<Button-5>', lambda *_: self.next_frame())
         self.bind('<Control-Button-4>', self.on_zoom_in)
         self.bind('<Control-Button-5>', self.on_zoom_out)
+        self.position_updated_event = Observable()
 
     def apply_transform(self):
         zoom = scroll_zoom_levels[self._zoom_level]
@@ -429,9 +454,6 @@ class VideoCanvas(tk.Canvas):
                     self.read_frame()
                     next_deadline = t + frame_time
 
-    def set_pos_updated_callback(self, cb):
-        self._pos_updated_callback = cb
-
     def open_video(self, file_path:Path):
         self.close_video()
         if not file_path.exists():
@@ -487,8 +509,7 @@ class VideoCanvas(tk.Canvas):
             return
         cv2.cvtColor(self._video_image_array, cv2.COLOR_BGR2RGB, self._video_image_array)
         self.apply_transform()
-        if self._pos_updated_callback:
-            self._pos_updated_callback(self.get_frame_pos() / self.get_frame_count())
+        self.position_updated_event(self.get_frame_pos() / self.get_frame_count())
 
     def play(self):
         self._playing = True
@@ -619,8 +640,8 @@ class App(AsyncTk):
 
         self.timeline = Timeline(self, height=50)
         self.timeline.pack(fill=ttkc.X)
-        self.timeline.set_pos_updated_callback(self.video_player.seek)
-        self.video_player.set_pos_updated_callback(self.position_updated)
+        self.timeline.position_updated_event += self.video_player.seek
+        self.video_player.position_updated_event += self.position_updated
         self.position_updated(0)
 
         self.timeline.bind('<MouseWheel>', self.on_mousewheel)
