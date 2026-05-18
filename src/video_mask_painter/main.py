@@ -19,6 +19,17 @@ from pyrsistent import *
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
 
+class timeit():
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        self.start = time.time()
+
+    def __exit__(self, exc_type, exc, tb):
+        t = int((time.time() - self.start) * 1000)
+        print(f'{self.name} {t}')
+
 class AsyncTk(tk.Tk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -364,10 +375,15 @@ class VideoPlayer(tk.Canvas):
         self._timer.cancel()
 
     async def update_task(self):
+        next_deadline = 0
         while True:
-            await asyncio.sleep(1.0 / self.get_fps())
+            frame_time = 1.0 / self.get_fps()
+            await asyncio.sleep(frame_time / 2)
             if self._playing:
-                self.read_frame()
+                t = time.time()
+                if t >= next_deadline:
+                    self.read_frame()
+                    next_deadline = t + frame_time
 
     def set_pos_updated_callback(self, cb):
         self._pos_updated_callback = cb
