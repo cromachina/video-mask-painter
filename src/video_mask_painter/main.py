@@ -1,10 +1,9 @@
 import asyncio
-import logging
 from pathlib import Path
-import threading
 import importlib.metadata
 import time
 import weakref
+import bisect
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -19,6 +18,12 @@ from pyrsistent import *
 
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
+
+def pvector_insert(vector, item, index):
+    return vector[:index] + pvector([item]) + vector[index:]
+
+def pvector_popleft(vector):
+    return vector[1:]
 
 class timeit():
     def __init__(self, name):
@@ -94,16 +99,119 @@ class AsyncTkCallback:
 
 class Keyframe(PClass):
     index = field(type=int)
-    mask = field(type=np.ndarray)
+    data = field(type=np.ndarray)
 
-class ProjectData(PClass):
-    video_file_path = field(Path, factory=Path)
+class ProjectState(PClass):
     keyframes = pvector_field(Keyframe)
-    selected_frame = field(type=int)
+    selected_index = field(initial=None)
 
-    def get_keyframe(frame_index):
-        # Binary search keyframes
-        pass
+    def print_keyframes(self):
+        print('----------')
+        for keyframe in self.keyframes:
+            print(keyframe.index, id(keyframe.data))
+
+    def get_keyframe(self, index):
+        if not self.keyframes:
+            return None
+        ix = bisect.bisect(self.keyframes, index, key=lambda x: x.index) - 1
+        if ix < 0:
+            return None
+        return self.keyframes[ix]
+
+    def get_previous_keyframe(self, index):
+        if not self.keyframes:
+            return None
+        ix = bisect.bisect(self.keyframes, index, key=lambda x: x.index) - 1
+        if ix < 0:
+            return None
+        keyframe = self.keyframes[ix]
+        if keyframe.index == index:
+            ix -= 1
+        if ix < 0:
+            return None
+        return self.keyframes[ix]
+
+    def get_next_keyframe(self, index):
+        if not self.keyframes:
+            return None
+        ix = bisect.bisect(self.keyframes, index, key=lambda x: x.index)
+        if ix >= len(self.keyframes):
+            return None
+        keyframe = self.keyframes[ix]
+        if keyframe.index == index:
+            ix += 1
+        if ix >= len(self.keyframes):
+            return None
+        return self.keyframes[ix]
+
+    def insert_keyframe(self, keyframe:Keyframe):
+        ix = bisect.bisect(self.keyframes, keyframe.index, key=lambda x: x.index)
+        return self.set(keyframes=pvector_insert(self.keyframes, keyframe, ix))
+
+    def remove_keyframe(self, index:int):
+        if not self.keyframes:
+            return self
+        ix = bisect.bisect(self.keyframes, index, key=lambda x: x.index) - 1
+        if ix < 0:
+            return self
+        return self.set(keyframes=self.keyframes.delete(ix))
+
+    def update_keyframe(self, index, data):
+        data.flags.writeable = False
+        keyframe = self.get_keyframe(index).set(data=data)
+        return self.remove_keyframe(keyframe.index).insert_keyframe(keyframe)
+
+class Project():
+    def __init__(self, initial_state:ProjectState, video_file_path:Path, project_file_path:Path|None=None):
+        self.video_file_path = video_file_path
+        self.project_file_path = project_file_path
+        self._states = pvector()
+        self._current_index = 0
+        self._next_id = 0
+        self._saved_id = 0
+        self.append(initial_state)
+
+    def get_current(self) -> ProjectState:
+        return self._states[self._current_index][1]
+
+    def update_current(self, state:ProjectState):
+        self._states = self._states.set(self._current_index, (self.self._get_current_id(), state))
+
+    def _get_current_id(self):
+        return self._states[self._current_index][0]
+
+    def append(self, state:ProjectState, state_limit:int|None=None):
+        state = (self._next_id, state)
+        self._next_id += 1
+        self._states = self._states[:self._current_index + 1]
+        self._states = self._states.append(state)
+        if state_limit is not None and len(self._states) > state_limit:
+            delta = len(self._states) - state_limit
+            self._states = self._states[delta:]
+        self._current_index = len(self._states) - 1
+
+    def undo(self):
+        self._current_index = max(0, self._current_index - 1)
+        return self.get_current()
+
+    def redo(self):
+        self._current_index = min(self._current_index + 1, len(self._states) - 1)
+        return self.get_current()
+
+    def can_undo(self):
+        return self._current_index != 0
+
+    def can_redo(self):
+        return self._current_index != (len(self._states) - 1)
+
+    def is_saved(self):
+        return self._saved_id == self._get_current_id()
+
+    def set_saved(self):
+        self._saved_id = self._get_current_id()
+
+    def set_dirty(self):
+        self._saved_id = None
 
 def make_button(master, name, icon_name, command):
     icon = BootstrapIcon(icon_name, size=20, color='#ffffff', style='outline')
@@ -169,31 +277,48 @@ class FramePositionMarker():
         self.position = position
         self.on_resize()
 
+keyframe_color = '#c3c3c3'
+keyframe_color_selected = '#ff0000'
+
 class KeyframeMarker():
-    def __init__(self, canvas:ttk.Canvas, position):
-        self.canvas = canvas
-        self.position = position
+    def __init__(self, timeline, index):
+        self.timeline = timeline
+        self.index = index
         radius = 7
         self.radius = radius
-        self.id = self.canvas.create_polygon(
+        self.id = self.timeline.create_polygon(
             -radius, 0, 0, radius, radius, 0, 0, -radius,
-            fill='#c3c3c3',
+            fill=keyframe_color,
+            activefill=keyframe_color_selected,
             outline='#000000',
-            activefill='#ff0000',
         )
-        self.canvas.reg_obj(self)
+        self.timeline.reg_keyframe(self)
+        self.timeline.tag_bind(self.id, '<Button-1>', self.on_click)
+        self.on_resize()
 
     def on_resize(self):
-        h = self.canvas.winfo_height()
-        w = self.canvas.winfo_width() - side_pad * 2
-        x = self.position * w - side_pad + 1
+        h = self.timeline.winfo_height()
+        w = self.timeline.winfo_width() - side_pad * 2
+        x = self.timeline.index_to_position(self.index) * w + side_pad - self.radius
         y = h / 2 - self.radius
-        self.canvas.moveto(self.id, x, y)
+        self.timeline.moveto(self.id, x, y)
+
+    def on_click(self, event):
+        self.timeline.set_selected_keyframe(self)
+
+    def set_selected(self, state):
+        self.timeline.itemconfig(self.id, fill=keyframe_color_selected if state else keyframe_color)
 
 class Timeline(tk.Canvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.objects = {}
+        self.keyframes = {}
+        self.selected_keyframe_index = None
+        self.current_frame = 0
+        self.frame_count = 0
+
+        self.background_area = self.create_rectangle(0, 0, 0, 0, fill="#292929", outline='')
 
         line_count = 24
         light = '#717171'
@@ -210,11 +335,32 @@ class Timeline(tk.Canvas):
         self.timer = asyncio.create_task(self.update_task())
 
         self.bind('<Configure>', self.on_resize)
-        self.bind('<Button-1>', self.on_drag_start)
-        self.bind('<Motion>', self.on_motion)
-        self.bind('<ButtonRelease-1>', self.on_drag_stop)
+        self.tag_bind(self.background_area, '<Button-1>', self.on_drag_start)
+        self.tag_bind(self.background_area, '<Motion>', self.on_motion)
+        self.tag_bind(self.background_area, '<ButtonRelease-1>', self.on_drag_stop)
         self.bind('<Destroy>', self.on_destroy)
         self.position_updated_event = Observable()
+
+    def set_frame_count(self, frame_count:int):
+        self.frame_count = frame_count
+
+    def index_to_position(self, index:int) -> float:
+        if self.frame_count == 0:
+            return 0
+        return index / float(self.frame_count)
+
+    def set_selected_keyframe(self, keyframe:KeyframeMarker):
+        self.unset_selected_keyframe()
+        keyframe.set_selected(True)
+        self.selected_keyframe_index = keyframe.index
+        self.set_position_marker(keyframe.index)
+        self.position_updated_event(keyframe.index)
+
+    def unset_selected_keyframe(self):
+        keyframe = self.keyframes.get(self.selected_keyframe_index)
+        if keyframe:
+            keyframe.set_selected(False)
+        self.selected_keyframe_index = None
 
     def on_destroy(self, event):
         self.timer.cancel()
@@ -222,12 +368,16 @@ class Timeline(tk.Canvas):
     def reg_obj(self, obj):
         self.objects[obj.id] = obj
 
+    def reg_keyframe(self, keyframe:KeyframeMarker):
+        self.keyframes[keyframe.index] = keyframe
+
     def on_resize(self, event):
         for object in self.objects.values():
             object.on_resize()
+        self.coords(self.background_area, (0, 0, self.winfo_width() - 1, self.winfo_height() - 1))
 
-    def set_position(self, position):
-        self.position_marker.set_position(position)
+    def set_position_marker(self, index):
+        self.position_marker.set_position(self.index_to_position(index))
 
     def on_drag_start(self, event):
         self.on_click(event)
@@ -257,15 +407,21 @@ class Timeline(tk.Canvas):
 
     def update_marker_position(self, event):
         position = self.event_to_position(event)
-        self.set_position(position)
+        self.position_marker.set_position(position)
         return position
 
     def on_click(self, event):
+        self.unset_selected_keyframe()
         position = self.update_marker_position(event)
-        self.position_updated_event(position)
+        self.position_updated_event(int(position * self.frame_count))
 
-    def add_keyframe(self, position):
-        return KeyframeMarker(self, position)
+    def add_keyframe(self, index):
+        return KeyframeMarker(self, index)
+
+    def clear_keyframes(self):
+        for keyframe in self.keyframes.values():
+            self.delete(keyframe.id)
+        self.keyframes.clear()
 
 def frames_to_time(frames, fps):
     time = frames / fps
@@ -315,8 +471,9 @@ class VideoCanvas(tk.Canvas):
         self._video_photo_image = None
         self._video_image_array = None
         self._mask_image_array = None
-        self._brush_size = 10
+        self._brush_size = 1
         self._drawing = False
+        self._drawing_mode = True # False = erasing
         self._render_buffer = np.empty((1,1,3), dtype=np.ubyte)
         self._frame_count = 0
         self._fps = 60
@@ -339,17 +496,20 @@ class VideoCanvas(tk.Canvas):
         self.bind('<Button-5>', lambda *_: self.next_frame())
         self.bind('<Control-Button-4>', self.on_zoom_in)
         self.bind('<Control-Button-5>', self.on_zoom_out)
-        self.position_updated_event = Observable()
+        self.frame_changing_event = Observable()
+        self.drawing_started_event = Observable()
+        self.drawing_finished_event = Observable()
 
-    def apply_transform(self):
+    def update_view(self):
         zoom = scroll_zoom_levels[self._zoom_level]
         clear_color = (0x33, 0x33, 0x33)
         if self._video:
-            video_image = self._video_image_array / 255.0
-            mask_image = self._mask_image_array / 255.0
-            #composite = (cv2.multiply(video_image, mask_image) * 255.0).astype(np.ubyte)
-            composite = ((video_image * mask_image) * 255.0).astype(np.ubyte)
-
+            if self._mask_image_array is not None:
+                video_image = self._video_image_array / 255.0
+                mask_image = self._mask_image_array / 255.0
+                composite = ((video_image * mask_image) * 255.0).astype(np.ubyte)
+            else:
+                composite = self._video_image_array
             canvas_h = self.winfo_height()
             canvas_w = self.winfo_width()
             image_size = np.array(self._video_image_array.shape[:2])
@@ -370,6 +530,27 @@ class VideoCanvas(tk.Canvas):
         self._video_photo_image = tk.PhotoImage(width=width, height=height, data=data, format='PPM')
         self.itemconfig(self._video_id, image=self._video_photo_image)
 
+    def set_drawing_mode(self):
+        self._drawing_mode = True
+
+    def set_erasing_mode(self):
+        self._drawing_mode = False
+
+    def set_mask_image_array(self, array):
+        self._mask_image_array = array
+
+    def get_mask_image_array(self):
+        return self._mask_image_array
+
+    def get_blank_image_array(self):
+        size = self.get_video_size()
+        data = np.full(size + (1,), fill_value=0xff, dtype=np.ubyte)
+        data.flags.writeable = False
+        return data
+
+    def set_brush_size(self, size:int):
+        self._brush_size = size
+
     def on_zoom_in(self, event):
         self.zoom(1, event)
 
@@ -379,7 +560,7 @@ class VideoCanvas(tk.Canvas):
     def zoom(self, level_delta, event):
         self._zoom_level += level_delta
         self._zoom_level = clamp(0, len(scroll_zoom_levels) - 1, self._zoom_level)
-        self.apply_transform()
+        self.update_view()
 
     def on_pan_start(self, event):
         self._panning_view = True
@@ -400,11 +581,15 @@ class VideoCanvas(tk.Canvas):
             return
         self._drawing = True
         self._last_drawing_pos = self.mouse_to_view(event_vec(event))
+        self.drawing_started_event()
+        if self._mask_image_array is not None:
+            self._mask_image_array = self._mask_image_array.copy()
 
     def on_draw_stop(self, event):
         if not self._video:
             return
         self._drawing = False
+        self.drawing_finished_event()
 
     def on_mouse_move(self, event:tk.Event):
         if not self._video:
@@ -414,12 +599,13 @@ class VideoCanvas(tk.Canvas):
             zoom = scroll_zoom_levels[self._zoom_level]
             delta = (current_pos - self._last_mouse_pos) / zoom
             self._view_position += delta
-            self.apply_transform()
-        elif self._drawing:
+            self.update_view()
+        elif self._drawing and self._mask_image_array is not None:
             brush_pos = self.mouse_to_view(current_pos)
-            cv2.line(self._mask_image_array, self._last_drawing_pos.astype(np.int32), brush_pos.astype(np.int32), 0x00, self._brush_size, cv2.LINE_AA)
+            color = 0x00 if self._drawing_mode else 0xff
+            cv2.line(self._mask_image_array, self._last_drawing_pos.astype(np.int32), brush_pos.astype(np.int32), color, self._brush_size, cv2.LINE_AA)
             self._last_drawing_pos = brush_pos
-            self.apply_transform()
+            self.update_view()
         self._last_mouse_pos = current_pos
 
     def on_mousewheel(self, event):
@@ -433,12 +619,12 @@ class VideoCanvas(tk.Canvas):
         w = self.winfo_width()
         self._render_buffer = np.empty((h, w, 3), dtype=np.ubyte)
         self._mask_render_buffer = np.empty((h, w, 3), dtype=np.ubyte)
-        self.apply_transform()
+        self.update_view()
 
     def reset_view(self):
         self._zoom_level = default_zoom_level
         self._view_position = np.array((0.0, 0.0))
-        self.apply_transform()
+        self.update_view()
 
     def on_destroy(self, event):
         self._timer.cancel()
@@ -460,11 +646,8 @@ class VideoCanvas(tk.Canvas):
             # TODO Show error
             return
         self._video = cv2.VideoCapture(str(file_path))
-        self._frame_count = self._video.get(cv2.CAP_PROP_FRAME_COUNT)
-        self._fps = self._video.get(cv2.CAP_PROP_FPS)
-        height = int(self._video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        width = int(self._video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self._mask_image_array = np.full((height, width, 1), fill_value=0xff, dtype=np.ubyte)
+        self._frame_count = int(self._video.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._fps = int(self._video.get(cv2.CAP_PROP_FPS))
         self.next_frame()
         self.reset_view()
 
@@ -475,14 +658,15 @@ class VideoCanvas(tk.Canvas):
         self._video = None
         self._video_image_array = None
         self._video_photo_image = None
+        self._mask_image_array = None
         self._frame_count = 0
         self._fps = 60
-        self.apply_transform()
+        self.update_view()
 
     def get_frame_pos(self):
         if not self._video:
             return 0
-        return self._video.get(cv2.CAP_PROP_POS_FRAMES)
+        return int(self._video.get(cv2.CAP_PROP_POS_FRAMES))
 
     def get_frame_count(self):
         return self._frame_count
@@ -490,15 +674,20 @@ class VideoCanvas(tk.Canvas):
     def get_fps(self):
         return self._fps
 
+    def get_video_size(self):
+        if not self._video:
+            return (0, 0)
+        return self._video_image_array.shape[:2]
+
     def get_time_string(self):
         curr_time = format_time(self.get_frame_pos(), self.get_fps())
         total_time = format_time(self.get_frame_count(), self.get_fps())
         return f'{curr_time} / {total_time}'
 
-    def set_frame_pos(self, frame):
+    def set_frame_pos(self, index):
         if not self._video:
             return
-        self._video.set(cv2.CAP_PROP_POS_FRAMES, frame - 1)
+        self._video.set(cv2.CAP_PROP_POS_FRAMES, index - 1)
         self.read_frame()
 
     def read_frame(self):
@@ -508,8 +697,8 @@ class VideoCanvas(tk.Canvas):
         if not ret:
             return
         cv2.cvtColor(self._video_image_array, cv2.COLOR_BGR2RGB, self._video_image_array)
-        self.apply_transform()
-        self.position_updated_event(self.get_frame_pos() / self.get_frame_count())
+        self.frame_changing_event(self.get_frame_pos())
+        self.update_view()
 
     def play(self):
         self._playing = True
@@ -528,12 +717,6 @@ class VideoCanvas(tk.Canvas):
             return
         self.read_frame()
 
-    def seek(self, position):
-        if not self._video:
-            return
-        frame = int(self._frame_count * position)
-        self.set_frame_pos(frame)
-
 class App(AsyncTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -541,7 +724,7 @@ class App(AsyncTk):
         self.geometry('{}x{}'.format(1000, 600))
         ttk.Style('darkly')
 
-        self.undo_stack = []
+        self.undo_limit = 100
         self.project = None
 
         # Menu bar
@@ -561,8 +744,8 @@ class App(AsyncTk):
         # Click to draw
         # space + click to pan
         # scroll to zoom
-        self.video_player = VideoCanvas(self, width=1, height=1)
-        self.video_player.pack(fill=ttkc.BOTH, expand=True)
+        self.video_canvas = VideoCanvas(self, width=1, height=1)
+        self.video_canvas.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
         button_frame = ttk.Frame(self)
@@ -584,8 +767,6 @@ class App(AsyncTk):
         make_button(button_frame, 'Next frame', 'arrow-right-short', self.next_frame)
         self.loop_button = make_checkbutton(button_frame, 'Toggle loop video', 'repeat')
         make_button(button_frame, 'Reset view', 'arrows-fullscreen', self.reset_view)
-
-        # TODO FPS field
 
         make_separator(button_frame)
 
@@ -610,6 +791,7 @@ class App(AsyncTk):
         self.drawing_mode_var = ttk.StringVar(value=self.drawing_mode_draw)
         make_radiobutton(radio_frame, 'Toggle draw', 'pencil', self.drawing_mode_draw, self.drawing_mode_var)
         make_radiobutton(radio_frame, 'Toggle erase', 'eraser', self.drawing_mode_erase, self.drawing_mode_var)
+        self.drawing_mode_var.trace_add('write', self.on_drawing_mode_changed)
 
         # Brush size selector
         label = ttk.Label(button_frame, text='Brush size')
@@ -626,6 +808,7 @@ class App(AsyncTk):
         scale_brush_val()
         label = ttk.Label(button_frame, textvariable=self.brush_size_var, width=5)
         label.pack(side=ttkc.LEFT)
+        self.brush_scale_var.trace_add('write', self.on_brush_size_changed)
 
         button_frame = ttk.Frame(self)
         button_frame.pack()
@@ -636,21 +819,73 @@ class App(AsyncTk):
         self.video_file_name_label.pack(side=ttkc.LEFT)
 
         # Timeline and info
-        # TODO Zoom and pan timeline?
-
         self.timeline = Timeline(self, height=50)
         self.timeline.pack(fill=ttkc.X)
-        self.timeline.position_updated_event += self.video_player.seek
-        self.video_player.position_updated_event += self.position_updated
-        self.position_updated(0)
+        self.timeline.position_updated_event += self.video_canvas.set_frame_pos
+        self.video_canvas.frame_changing_event += self.on_frame_changing
+        self.video_canvas.drawing_started_event += self.on_drawing_started
+        self.video_canvas.drawing_finished_event += self.on_drawing_finished
 
         self.timeline.bind('<MouseWheel>', self.on_mousewheel)
-        self.timeline.bind('<Button-4>', lambda *_: self.previous_frame())
-        self.timeline.bind('<Button-5>', lambda *_: self.next_frame())
+        self.timeline.bind('<Button-4>', lambda event: self.previous_frame())
+        self.timeline.bind('<Button-5>', lambda event: self.next_frame())
 
-    def position_updated(self, position):
-        self.time_label.config(text=self.video_player.get_time_string())
-        self.timeline.set_position(position)
+    def update_view(self):
+        if self.project:
+            self.timeline.clear_keyframes()
+            state = self.project.get_current()
+            for keyframe in state.keyframes:
+                self.timeline.add_keyframe(keyframe.index)
+            index = self.video_canvas.get_frame_pos()
+            keyframe = state.get_keyframe(index)
+            data = keyframe.data if keyframe else None
+            self.video_canvas.set_mask_image_array(data)
+            self.video_canvas.update_view()
+
+    def on_frame_changing(self, index):
+        if self.project:
+            state = self.project.get_current()
+            keyframe = state.get_keyframe(index)
+            data = keyframe.data if keyframe else None
+            self.video_canvas.set_mask_image_array(data)
+            self.time_label.config(text=self.video_canvas.get_time_string())
+            self.timeline.set_position_marker(index)
+
+    def on_drawing_mode_changed(self, *args):
+        mode = self.drawing_mode_var.get()
+        if mode == self.drawing_mode_draw:
+            self.video_canvas.set_drawing_mode()
+        elif mode == self.drawing_mode_erase:
+            self.video_canvas.set_erasing_mode()
+
+    def on_brush_size_changed(self, *args):
+        self.video_canvas.set_brush_size(self.brush_size_var.get())
+
+    def on_drawing_started(self):
+        if self.project:
+            state = self.project.get_current()
+            index = self.video_canvas.get_frame_pos()
+            keyframe = state.get_keyframe(index)
+            mode = self.auto_keyframe_var.get()
+            if keyframe:
+                if keyframe.index == index:
+                    return
+                if mode == self.auto_keyframe_blank:
+                    self.add_blank_keyframe()
+                elif mode == self.auto_keyframe_clone:
+                    self.clone_keyframe()
+            else:
+                if mode != self.auto_keyframe_off:
+                    self.add_blank_keyframe()
+
+    def on_drawing_finished(self):
+        if self.project:
+            data = self.video_canvas.get_mask_image_array()
+            if data is None:
+                return
+            index = self.video_canvas.get_frame_pos()
+            state = self.project.get_current().update_keyframe(index, data).set(selected_index=index)
+            self.project.append(state, self.undo_limit)
 
     def open_video(self):
         file_name = filedialog.askopenfilename(
@@ -658,9 +893,10 @@ class App(AsyncTk):
             filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
         )
         if file_name:
-            self.project = ProjectData(video_file_path=file_name)
-            self.video_player.open_video(self.project.video_file_path)
+            self.project = Project(ProjectState(), video_file_path=Path(file_name))
+            self.video_canvas.open_video(self.project.video_file_path)
             self.video_file_name_label.config(text=f'({self.project.video_file_path.name})')
+            self.timeline.set_frame_count(self.video_canvas.get_frame_count())
 
     def open_project(self):
         pass
@@ -681,41 +917,94 @@ class App(AsyncTk):
     def cleanup(self):
         self.destroy()
 
+    def update_to_selected(self):
+        if self.project:
+            state = self.project.get_current()
+            if state.selected_index:
+                self.video_canvas.set_frame_pos(state.selected_index)
+
     def undo(self):
-        pass
+        if self.project:
+            self.project.undo()
+            self.update_to_selected()
+            self.update_view()
 
     def redo(self):
-        pass
+        if self.project:
+            self.project.redo()
+            self.update_to_selected()
+            self.update_view()
 
     def previous_keyframe(self):
-        pass
+        if self.project:
+            state = self.project.get_current()
+            index = self.video_canvas.get_frame_pos()
+            keyframe = state.get_previous_keyframe(index)
+            if not keyframe:
+                return
+            self.video_canvas.set_frame_pos(keyframe.index)
 
     def next_keyframe(self):
-        pass
+        if self.project:
+            state = self.project.get_current()
+            index = self.video_canvas.get_frame_pos()
+            keyframe = state.get_next_keyframe(index)
+            if not keyframe:
+                return
+            self.video_canvas.set_frame_pos(keyframe.index)
 
     def add_blank_keyframe(self):
-        pass
+        if self.project:
+            index = self.video_canvas.get_frame_pos()
+            state = self.project.get_current()
+            keyframe = state.get_keyframe(index)
+            if keyframe and keyframe.index == index:
+                return
+            data = self.video_canvas.get_blank_image_array()
+            keyframe = Keyframe(index=index, data=data)
+            state = state.insert_keyframe(keyframe).set(selected_index=index)
+            self.project.append(state, self.undo_limit)
+            self.update_view()
 
     def clone_keyframe(self):
-        pass
+        if self.project:
+            index = self.video_canvas.get_frame_pos()
+            state = self.project.get_current()
+            keyframe = state.get_keyframe(index)
+            if keyframe and keyframe.index == index:
+                return
+            if not keyframe:
+                self.add_blank_keyframe()
+                return
+            keyframe = keyframe.set(index=index)
+            state = state.insert_keyframe(keyframe).set(selected_index=index)
+            self.project.append(state, self.undo_limit)
+            self.update_view()
 
     def delete_keyframe(self):
-        pass
+        if self.project:
+            index = self.video_canvas.get_frame_pos()
+            state = self.project.get_current()
+            keyframe = state.get_keyframe(index)
+            if keyframe:
+                state = state.remove_keyframe(index)
+                self.project.append(state, self.undo_limit)
+            self.update_view()
 
     def play_video(self):
-        self.video_player.play()
+        self.video_canvas.play()
 
     def pause_video(self):
-        self.video_player.pause()
+        self.video_canvas.pause()
 
     def previous_frame(self):
-        self.video_player.previous_frame()
+        self.video_canvas.previous_frame()
 
     def next_frame(self):
-        self.video_player.next_frame()
+        self.video_canvas.next_frame()
 
     def reset_view(self):
-        self.video_player.reset_view()
+        self.video_canvas.reset_view()
 
     def on_mousewheel(self, event):
         if event.delta > 0:
