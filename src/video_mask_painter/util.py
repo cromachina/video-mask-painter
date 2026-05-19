@@ -91,14 +91,20 @@ class Observable():
         self.callbacks = set()
 
     def add(self, callback):
-        self.callbacks.add(weakref.WeakMethod(callback, self.remove))
+        try:
+            self.callbacks.add(weakref.WeakMethod(callback, self.remove))
+        except:
+            self.callbacks.add(callback)
 
     def remove(self, callback):
         self.callbacks.discard(callback)
 
     def call(self, *args, **kwargs):
         for callback in self.callbacks:
-            cb = callback()
+            if isinstance(callback, weakref.WeakMethod):
+                cb = callback()
+            else:
+                cb = callback
             if cb:
                 cb(*args, **kwargs)
 
