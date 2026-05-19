@@ -8,11 +8,42 @@ import ttkbootstrap.constants as ttkc
 
 import numpy as np
 import cv2
+import numba
 
 from .util import *
 
 _scroll_zoom_levels = [2 ** (x / 4) for x in range(-28, 21)]
 _default_zoom_level = 28
+
+_rangemax = 0x3fff
+
+@numba.vectorize
+def to_short(value):
+    value = np.short(value)
+    return (value << 6) | (value >> 2)
+
+@numba.vectorize
+def to_byte(value):
+    return np.ubyte(value >> 6)
+
+@numba.vectorize
+def mul(a, b):
+    return (a * b) >> 14
+
+@numba.vectorize
+def comp(a, b):
+    return mul(a, _rangemax - b)
+
+@numba.vectorize
+def blend(dst, src, tint, alpha):
+    Cd = to_short(dst)
+    Cs = to_short(src)
+    tint = to_short(tint)
+    alpha = to_short(alpha)
+    As = mul(Cs, alpha)
+    Cs = mul(mul(Cs, As), tint)
+    res = Cs + comp(Cd, As)
+    return to_byte(res)
 
 class VideoCanvas(ttk.Canvas):
     def __init__(self, *args, **kwargs):
@@ -61,9 +92,9 @@ class VideoCanvas(ttk.Canvas):
         clear_color = (0x33, 0x33, 0x33)
         if self._video:
             if self._mask_image_array is not None:
-                video_image = self._video_image_array / 255.0
-                mask_image = self._mask_image_array / 255.0
-                composite = ((video_image * mask_image) * 255.0).astype(np.ubyte)
+                tint = np.array((0, 0, 255))
+                alpha = 127
+                composite = blend(self._video_image_array, self._mask_image_array, tint, alpha)
             else:
                 composite = self._video_image_array
             canvas_h = self.winfo_height()
@@ -154,7 +185,7 @@ class VideoCanvas(ttk.Canvas):
     def _on_draw_move(self, event:tk.Event):
         current_pos = event_vec(event)
         brush_pos = self._mouse_to_view(current_pos)
-        color = 0x00 if self._drawing_mode else 0xff
+        color = 0xff if self._drawing_mode else 0x00
         cv2.line(self._mask_image_array, self._last_drawing_pos.astype(np.int32), brush_pos.astype(np.int32), color, self._brush_size, cv2.LINE_AA)
         self._last_drawing_pos = brush_pos
         self.update_view()
@@ -183,7 +214,7 @@ class VideoCanvas(ttk.Canvas):
     def get_blank_image_array(self) -> np.ndarray | None:
         if self._video:
             size = self.get_video_size()
-            data = np.full(size + (1,), fill_value=0xff, dtype=np.ubyte)
+            data = np.full(size + (1,), fill_value=0x00, dtype=np.ubyte)
             data.flags.writeable = False
             return data
 

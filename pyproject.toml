@@ -22,6 +22,7 @@ dependencies = [
     'ttkbootstrap-icons',
     'ttkbootstrap-icons-bs',
     'pyrsistent',
+    'numba',
 ]
 
 [project.optional-dependencies]

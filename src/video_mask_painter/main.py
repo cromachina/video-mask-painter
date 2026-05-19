@@ -14,6 +14,7 @@ from .util import *
 from .video_canvas import VideoCanvas
 from .project import *
 from .timeline import *
+from .bar_scale import *
 
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
@@ -107,12 +108,7 @@ class App(AsyncTk):
         make_button(button_frame, 'Undo', 'arrow-90deg-left', self.undo)
         make_button(button_frame, 'Redo', 'arrow-90deg-right', self.redo)
 
-        # Keyframe Buttons
-        make_button(button_frame, 'Previous keyframe', 'arrow-left-square', self.previous_keyframe)
-        make_button(button_frame, 'Next keyframe', 'arrow-right-square', self.next_keyframe)
-        make_button(button_frame, 'Add blank keyframe', 'square', self.add_blank_keyframe)
-        make_button(button_frame, 'Clone keyframe', 'copy', self.clone_keyframe)
-        make_button(button_frame, 'Delete keyframe', 'x-square', self.delete_keyframe)
+        make_separator(button_frame)
 
         # Video playback buttons
         make_button(button_frame, 'Play video', 'play', self.play_video)
@@ -121,6 +117,15 @@ class App(AsyncTk):
         make_button(button_frame, 'Next frame', 'arrow-right-short', self.next_frame)
         self.loop_button = make_checkbutton(button_frame, 'Toggle loop video', 'repeat')
         make_button(button_frame, 'Reset view', 'arrows-fullscreen', self.reset_view)
+
+        make_separator(button_frame)
+
+        # Keyframe Buttons
+        make_button(button_frame, 'Previous keyframe', 'arrow-left-square', self.previous_keyframe)
+        make_button(button_frame, 'Next keyframe', 'arrow-right-square', self.next_keyframe)
+        make_button(button_frame, 'Add blank keyframe', 'square', self.add_blank_keyframe)
+        make_button(button_frame, 'Clone keyframe', 'copy', self.clone_keyframe)
+        make_button(button_frame, 'Delete keyframe', 'x-square', self.delete_keyframe)
 
         make_separator(button_frame)
 
@@ -148,21 +153,11 @@ class App(AsyncTk):
         self.drawing_mode_var.trace_add('write', self.on_drawing_mode_changed)
 
         # Brush size selector
-        label = ttk.Label(button_frame, text='Brush size')
-        label.pack(side=ttkc.LEFT)
-        self.brush_scale_var = ttk.IntVar(value=1)
-        brush_scale = ttk.Scale(button_frame, variable=self.brush_scale_var, from_=1, to=1000)
-        brush_scale.pack(fill=ttkc.X, side=ttkc.LEFT)
-        self.brush_size_var = ttk.IntVar()
-        def scale_brush_val(*_):
-            x = self.brush_scale_var.get()
-            v = int(2 ** (x / 100))
-            self.brush_size_var.set(v)
-        self.brush_scale_var.trace_add('write', scale_brush_val)
-        scale_brush_val()
-        label = ttk.Label(button_frame, textvariable=self.brush_size_var, width=5)
-        label.pack(side=ttkc.LEFT)
-        self.brush_scale_var.trace_add('write', self.on_brush_size_changed)
+        brush_scale = BarScale(
+            button_frame, label='Brush size', value=1, minval=1, maxval=1000,
+            scale_type=BarScale.CURVE, height=30, width=150)
+        brush_scale.pack(side=ttkc.LEFT, padx=5)
+        brush_scale.value_updated_event += self.on_brush_size_changed
 
         button_frame = ttk.Frame(self)
         button_frame.pack()
@@ -221,8 +216,8 @@ class App(AsyncTk):
         elif mode == self.drawing_mode_erase:
             self.video_canvas.set_erasing_mode()
 
-    def on_brush_size_changed(self, *args):
-        self.video_canvas.set_brush_size(self.brush_size_var.get())
+    def on_brush_size_changed(self, value):
+        self.video_canvas.set_brush_size(int(value))
 
     def on_drawing_started(self):
         if self.project:

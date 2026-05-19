@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -139,10 +140,8 @@ class Timeline(ttk.Canvas):
         self._keyframes[keyframe.index] = keyframe
 
     def _on_resize(self, event:tk.Event):
-        for object in self._objects.values():
+        for object in itertools.chain(self._objects.values(), self._keyframes.values()):
             object.on_resize()
-        for keyframe in self._keyframes.values():
-            keyframe.on_resize()
         self.coords(self._background_area, (0, 0, self.winfo_width() - 1, self.winfo_height() - 1))
 
     def set_position_marker(self, index:int):

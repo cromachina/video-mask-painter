@@ -5,6 +5,32 @@ import tkinter as tk
 from pyrsistent import *
 import numpy as np
 
+def lerp(a, b, t):
+    return (b - a) * t + a
+
+def bilinear(a, b, c, t):
+    ab = lerp(a, b, t)
+    bc = lerp(b, c, t)
+    return lerp(ab, bc, t)
+
+epsilon = 0.00001
+
+def secant_method(f, x0=0, x1=1, iters=20):
+    for _ in range(iters):
+        f0 = f(x0)
+        f1 = f(x1)
+        if f0 == f1:
+            return x1
+        x2 = x1 - f1 * (x1 - x0) / (f1 - f0)
+        x0, x1 = x1, x2
+    return x2
+
+def quadratic_bezier(a, b, c, t):
+    return bilinear(a, b, c, t)[1]
+
+def inverse_quadratic_bezier(a, b, c, value):
+    return secant_method(lambda x: quadratic_bezier(a, b, c, x) - value)
+
 def clamp(min_val, max_val, val):
     return max(min_val, min(max_val, val))
 
