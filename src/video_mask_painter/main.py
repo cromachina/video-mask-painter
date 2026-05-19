@@ -281,8 +281,8 @@ class App(AsyncTk):
         )
         if file_path:
             self.project = Project(ProjectState(), video_file_path=Path(file_path))
-            self.project.set_dirty()
             self.load_video(self.project.video_file_path)
+            self.add_blank_keyframe()
 
     @saved_check('exiting')
     def on_exit(self):
