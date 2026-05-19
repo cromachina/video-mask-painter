@@ -49,8 +49,8 @@ class FramePositionMarker():
         self._position = position
         self.on_resize()
 
-keyframe_color = '#c3c3c3'
-keyframe_color_selected = '#ff0000'
+_keyframe_color = '#c3c3c3'
+_keyframe_color_selected = '#ff0000'
 
 class KeyframeMarker():
     def __init__(self, timeline:'Timeline', index:int):
@@ -60,8 +60,8 @@ class KeyframeMarker():
         self._radius = radius
         self.id = self._timeline.create_polygon(
             -radius, 0, 0, radius, radius, 0, 0, -radius,
-            fill=keyframe_color,
-            activefill=keyframe_color_selected,
+            fill=_keyframe_color,
+            activefill=_keyframe_color_selected,
             outline='#000000',
         )
         self._timeline.reg_keyframe(self)
@@ -71,7 +71,7 @@ class KeyframeMarker():
     def on_resize(self):
         h = self._timeline.winfo_height()
         w = self._timeline.winfo_width() - _side_pad * 2
-        x = self._timeline.index_to_position(self.index) * w + _side_pad - self._radius
+        x = self._timeline.index_to_position(self.index) * w + _side_pad - self._radius - 2
         y = h / 2 - self._radius
         self._timeline.moveto(self.id, x, y)
 
@@ -79,7 +79,7 @@ class KeyframeMarker():
         self._timeline.set_selected_keyframe(self)
 
     def set_selected(self, state):
-        self._timeline.itemconfig(self.id, fill=keyframe_color_selected if state else keyframe_color)
+        self._timeline.itemconfig(self.id, fill=_keyframe_color_selected if state else _keyframe_color)
 
 class Timeline(ttk.Canvas):
     def __init__(self, *args, **kwargs):
@@ -141,6 +141,8 @@ class Timeline(ttk.Canvas):
     def _on_resize(self, event:tk.Event):
         for object in self._objects.values():
             object.on_resize()
+        for keyframe in self._keyframes.values():
+            keyframe.on_resize()
         self.coords(self._background_area, (0, 0, self.winfo_width() - 1, self.winfo_height() - 1))
 
     def set_position_marker(self, index:int):
