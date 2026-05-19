@@ -110,7 +110,7 @@ class App(AsyncTk):
         # Keyframe Buttons
         make_button(button_frame, 'Previous keyframe', 'arrow-left-square', self.previous_keyframe)
         make_button(button_frame, 'Next keyframe', 'arrow-right-square', self.next_keyframe)
-        make_button(button_frame, 'Add blank keyframe', 'plus-square', self.add_blank_keyframe)
+        make_button(button_frame, 'Add blank keyframe', 'square', self.add_blank_keyframe)
         make_button(button_frame, 'Clone keyframe', 'copy', self.clone_keyframe)
         make_button(button_frame, 'Delete keyframe', 'x-square', self.delete_keyframe)
 
@@ -132,7 +132,7 @@ class App(AsyncTk):
         self.auto_keyframe_clone = 'clone'
         self.auto_keyframe_var = ttk.StringVar(value=self.auto_keyframe_off)
         make_radiobutton(radio_frame, 'Toggle auto-keyframe off', 'window-x', self.auto_keyframe_off, self.auto_keyframe_var)
-        make_radiobutton(radio_frame, 'Toggle auto-keyframe blank', 'window-plus', self.auto_keyframe_blank, self.auto_keyframe_var)
+        make_radiobutton(radio_frame, 'Toggle auto-keyframe blank', 'window', self.auto_keyframe_blank, self.auto_keyframe_var)
         make_radiobutton(radio_frame, 'Toggle auto-keyframe clone', 'window-stack', self.auto_keyframe_clone, self.auto_keyframe_var)
 
         make_separator(button_frame)
