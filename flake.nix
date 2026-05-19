@@ -12,7 +12,7 @@
     let
       pkgs = nixpkgs.legacyPackages.${system};
       lib = pkgs.lib;
-      python = pkgs.python314;
+      python = pkgs.python313;
       pyPkgs = python.pkgs // rec {
         ttkbootstrap-icons = pyPkgs.buildPythonPackage  {
           pname = "ttkbootstrap-icons";

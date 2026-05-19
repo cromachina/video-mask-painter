@@ -8,6 +8,7 @@ import ttkbootstrap.constants as ttkc
 from ttkbootstrap.widgets import tooltip
 from ttkbootstrap_icons_bs import BootstrapIcon
 from tkinter import filedialog
+from ttkbootstrap import dialogs
 
 from .util import *
 from .video_canvas import VideoCanvas
@@ -77,7 +78,7 @@ class App(AsyncTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title(f'{__package__} {__version__}')
-        self.geometry('{}x{}'.format(1000, 600))
+        self.geometry('{}x{}'.format(1200, 800))
         ttk.Style('darkly')
 
         self.undo_limit = 100
@@ -88,10 +89,11 @@ class App(AsyncTk):
         self.config(menu=menubar)
         file_menu = tk.Menu(menubar)
         menubar.add_cascade(label='File', menu=file_menu)
-        file_menu.add_command(label='Open Video', command=self.open_video)
+        file_menu.add_command(label='Open Video as New Project', command=self.open_video)
         file_menu.add_command(label='Open Project', command=self.open_project)
         file_menu.add_command(label='Save Project', command=self.save_project)
         file_menu.add_command(label='Save As Project', command=self.save_as_project)
+        file_menu.add_command(label='Set Project Video', command=self.set_project_video)
         file_menu.add_command(label='Render Video', command=self.render_video)
         file_menu.add_command(label='Exit', command=self.exit)
 
@@ -179,8 +181,17 @@ class App(AsyncTk):
         self.video_canvas.drawing_finished_event += self.on_drawing_finished
 
         self.timeline.bind('<MouseWheel>', self.on_mousewheel)
-        self.timeline.bind('<Button-4>', lambda event: self.previous_frame())
-        self.timeline.bind('<Button-5>', lambda event: self.next_frame())
+        self.timeline.bind('<Button-4>', self.previous_frame)
+        self.timeline.bind('<Button-5>', self.next_frame)
+
+        self.bind('<Left>', self.previous_frame)
+        self.bind('<Right>', self.next_frame)
+        self.bind('<Shift-Left>', self.previous_keyframe)
+        self.bind('<Shift-Right>', self.next_keyframe)
+        self.bind('<Control-s>', self.save_project)
+        self.bind('<Control-S>', self.save_as_project)
+
+        #self.bind('<KeyPress>', print)
 
     def update_view(self):
         if self.project:
@@ -239,25 +250,80 @@ class App(AsyncTk):
             state = self.project.get_current().update_keyframe(index, data).set(selected_index=index)
             self.project.append(state, self.undo_limit)
 
+    def load_video(self, file_path:Path):
+        self.video_canvas.open_video(file_path)
+        self.video_file_name_label.config(text=f'({file_path.name})')
+        self.timeline.set_frame_count(self.video_canvas.get_frame_count())
+        self.update_view()
+
     def open_video(self):
-        file_name = filedialog.askopenfilename(
+        file_path = filedialog.askopenfilename(
             title='Open Video',
             filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
         )
-        if file_name:
-            self.project = Project(ProjectState(), video_file_path=Path(file_name))
-            self.video_canvas.open_video(self.project.video_file_path)
-            self.video_file_name_label.config(text=f'({self.project.video_file_path.name})')
-            self.timeline.set_frame_count(self.video_canvas.get_frame_count())
+        if file_path:
+            self.project = Project(ProjectState(), video_file_path=Path(file_path))
+            self.load_video(self.project.video_file_path)
 
     def open_project(self):
-        pass
+        if self.project:
+            if not self.project.is_saved():
+                result = dialogs.Messagebox.yesnocancel('Save current project before opening?', 'Save')
+                if result == 'No':
+                    pass
+                elif result == 'Yes':
+                    if not self.save_project():
+                        return
+                else:
+                    return
+        file_path = filedialog.askopenfilename(
+            title='Open Project',
+            filetypes=project_file_types,
+        )
+        if file_path:
+            self.project = load_project(file_path)
+            try:
+                self.load_video(self.project.video_file_path)
+            except:
+                result = dialogs.Messagebox.yesno(
+                    'Could not find or open project video file.\nPick another video to load for this project?',
+                    'Video Load Error')
+                if result == 'Yes':
+                    self.set_project_video()
 
-    def save_project(self):
-        pass
+    def save_project(self, *args):
+        if self.project:
+            if self.project.project_file_path:
+                save_project(self.project, self.project.project_file_path)
+                self.project.set_saved()
+                return True
+            else:
+                return self.save_as_project()
+        return False
 
-    def save_as_project(self):
-        pass
+    def save_as_project(self, *args):
+        if self.project:
+            file_path = filedialog.asksaveasfilename(
+                title='Save As',
+                filetypes=project_file_types,
+            )
+            if file_path:
+                file_path = Path(file_path)
+                save_project(self.project, file_path)
+                self.project.set_saved()
+                self.project.project_file_path = file_path
+                return True
+        return False
+
+    def set_project_video(self):
+        file_path = filedialog.askopenfilename(
+            title='Set Project Video',
+            filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
+        )
+        if file_path:
+            self.project.video_file_path = Path(file_path)
+            self.project.set_dirty()
+            self.load_video(self.project.video_file_path)
 
     def render_video(self):
         pass
@@ -287,7 +353,7 @@ class App(AsyncTk):
             self.update_to_selected()
             self.update_view()
 
-    def previous_keyframe(self):
+    def previous_keyframe(self, *args):
         if self.project:
             state = self.project.get_current()
             index = self.video_canvas.get_frame_pos()
@@ -296,7 +362,7 @@ class App(AsyncTk):
                 return
             self.video_canvas.set_frame_pos(keyframe.index)
 
-    def next_keyframe(self):
+    def next_keyframe(self, *args):
         if self.project:
             state = self.project.get_current()
             index = self.video_canvas.get_frame_pos()
@@ -305,7 +371,7 @@ class App(AsyncTk):
                 return
             self.video_canvas.set_frame_pos(keyframe.index)
 
-    def add_blank_keyframe(self):
+    def add_blank_keyframe(self, *args):
         if self.project:
             index = self.video_canvas.get_frame_pos()
             state = self.project.get_current()
@@ -349,10 +415,10 @@ class App(AsyncTk):
     def pause_video(self):
         self.video_canvas.pause()
 
-    def previous_frame(self):
+    def previous_frame(self, *args):
         self.video_canvas.previous_frame()
 
-    def next_frame(self):
+    def next_frame(self, *args):
         self.video_canvas.next_frame()
 
     def reset_view(self):

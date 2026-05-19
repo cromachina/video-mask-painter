@@ -1,8 +1,12 @@
 from pathlib import Path
 import bisect
+import zipfile
+import json
+import tempfile
 
 from pyrsistent import *
 import numpy as np
+import cv2
 
 from .util import *
 
@@ -121,3 +125,44 @@ class Project():
 
     def set_dirty(self):
         self._saved_id = None
+
+def save_project(project:Project, file_path:Path):
+    with (tempfile.NamedTemporaryFile(dir=file_path.parent, prefix=file_path.name, delete=False, delete_on_close=False) as temp,
+        zipfile.ZipFile(temp.name, mode='w', compression=zipfile.ZIP_STORED, compresslevel=5) as zfile):
+        try:
+            metadata = {
+                'video_file_path': str(project.video_file_path),
+            }
+            zfile.writestr('metadata.json', json.dumps(metadata).encode())
+            state = project.get_current()
+            for keyframe in state.keyframes:
+                res, data = cv2.imencode('.png', keyframe.data)
+                zfile.writestr(f'frames/{keyframe.index}', data.tobytes())
+            zfile.close()
+            Path(temp.name).rename(file_path)
+        except Exception as ex:
+            zfile.close()
+            temp.close()
+            Path(temp.name).unlink(True)
+            raise ex
+
+def load_project(file_path:Path) -> Project:
+    with zipfile.ZipFile(file_path, mode='r') as zfile:
+        metadata = json.loads(zfile.read('metadata.json').decode())
+        state = ProjectState()
+        for sub_file in zfile.namelist():
+            sub_file_path = Path(sub_file)
+            if str(sub_file_path.parent) != 'frames':
+                continue
+            index = int(sub_file_path.name)
+            data = zfile.read(sub_file)
+            data = cv2.imdecode(np.frombuffer(data, dtype=np.ubyte), cv2.IMREAD_GRAYSCALE)
+            data = data.reshape(data.shape + (1,))
+            data.flags.writeable = False
+            state = state.insert_keyframe(Keyframe(index=index, data=data))
+        return Project(
+            initial_state=state,
+            video_file_path=Path(metadata['video_file_path']),
+            project_file_path=Path(file_path))
+
+project_file_types = (('VMP', '*.vmp'), ('Any', '*.*'))
