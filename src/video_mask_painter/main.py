@@ -330,14 +330,17 @@ class App(AsyncTk):
         return False
 
     def set_project_video(self):
-        file_path = filedialog.askopenfilename(
-            title='Set Project Video',
-            filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
-        )
-        if file_path:
-            self.project.video_file_path = Path(file_path)
-            self.project.set_dirty()
-            self.load_video(self.project.video_file_path)
+        if self.project:
+            file_path = filedialog.askopenfilename(
+                title='Set Project Video',
+                filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
+            )
+            if file_path:
+                self.project.video_file_path = Path(file_path)
+                self.project.set_dirty()
+                self.load_video(self.project.video_file_path)
+        else:
+            self.open_video()
 
     def render_video(self):
         pass
