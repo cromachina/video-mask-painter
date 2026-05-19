@@ -59,6 +59,8 @@ class VideoCanvas(ttk.Canvas):
         self._frame_count = 0
         self._fps = 60
         self._video_id = self.create_image((0, 0), anchor=ttkc.NW)
+        self._cursor_id = self.create_oval(0, 0, 0, 0, fill='', outline='#000000', width=1)
+        self._mouse_inside = False
         self._playing = False
         self._last_mouse_pos = np.array((0.0, 0.0))
         self._panning_view = False
@@ -77,6 +79,8 @@ class VideoCanvas(ttk.Canvas):
         self.bind('<Button-5>', lambda *_: self.next_frame())
         self.bind('<Control-Button-4>', self._on_zoom_in)
         self.bind('<Control-Button-5>', self._on_zoom_out)
+        self.bind('<Enter>', self._on_mouse_enter)
+        self.bind('<Leave>', self._on_mouse_leave)
         self.frame_changing_event = Observable()
         self.drawing_started_event = Observable()
         self.drawing_finished_event = Observable()
@@ -84,11 +88,14 @@ class VideoCanvas(ttk.Canvas):
     def _on_destroy(self, event:tk.Event):
         self._task.cancel()
 
+    def _get_zoom_factor(self):
+        return _scroll_zoom_levels[self._zoom_level]
+
     ###########################################################################
     ## Viewport rendering
 
     def update_view(self):
-        zoom = _scroll_zoom_levels[self._zoom_level]
+        zoom = self._get_zoom_factor()
         clear_color = (0x33, 0x33, 0x33)
         if self._video:
             if self._mask_image_array is not None:
@@ -137,22 +144,27 @@ class VideoCanvas(ttk.Canvas):
         self._zoom_level += level_delta
         self._zoom_level = clamp(0, len(_scroll_zoom_levels) - 1, self._zoom_level)
         self.update_view()
+        self._update_cursor_scale()
 
     def _on_pan_start(self, event:tk.Event):
         self._panning_view = True
+        self.config(cursor='cross')
+        self._hide_cursor()
 
     def _on_pan_stop(self, event:tk.Event):
         self._panning_view = False
+        if self._mouse_inside:
+            self._show_cursor()
 
     def _on_pan_move(self, event:tk.Event):
         current_pos = event_vec(event)
-        zoom = _scroll_zoom_levels[self._zoom_level]
+        zoom = self._get_zoom_factor()
         delta = (current_pos - self._last_mouse_pos) / zoom
         self._view_position += delta
         self.update_view()
 
     def _mouse_to_view(self, vec:np.ndarray) -> np.ndarray:
-        zoom = _scroll_zoom_levels[self._zoom_level]
+        zoom = self._get_zoom_factor()
         canvas_h = self.winfo_height()
         canvas_w = self.winfo_width()
         canvas_size = np.array((canvas_w, canvas_h))
@@ -170,6 +182,7 @@ class VideoCanvas(ttk.Canvas):
     def _on_draw_start(self, event:tk.Event):
         if not self._video:
             return
+        self._show_cursor()
         self._drawing = True
         self._last_drawing_pos = self._mouse_to_view(event_vec(event))
         self.drawing_started_event()
@@ -180,6 +193,8 @@ class VideoCanvas(ttk.Canvas):
         if not self._video:
             return
         self._drawing = False
+        if not self._mouse_inside:
+            self._hide_cursor()
         self.drawing_finished_event()
 
     def _on_draw_move(self, event:tk.Event):
@@ -198,6 +213,37 @@ class VideoCanvas(ttk.Canvas):
         elif self._drawing and self._mask_image_array is not None:
             self._on_draw_move(event)
         self._last_mouse_pos = event_vec(event)
+        self._update_cursor_position()
+
+    def _hide_cursor(self):
+        self.itemconfig(self._cursor_id, state=ttkc.HIDDEN)
+
+    def _show_cursor(self):
+        self.config(cursor='none')
+        self.itemconfig(self._cursor_id, state=ttkc.NORMAL)
+        self._update_cursor_position()
+
+    def _update_cursor_scale(self):
+        zoom = self._get_zoom_factor()
+        size = self._brush_size * zoom
+        self.coords(self._cursor_id, 0, 0, size, size)
+        self._update_cursor_position()
+
+    def _update_cursor_position(self):
+        zoom = self._get_zoom_factor()
+        size = self._brush_size * zoom
+        offset = size / 2
+        self.moveto(self._cursor_id, self._last_mouse_pos[0] - offset, self._last_mouse_pos[1] - offset)
+
+    def _on_mouse_enter(self, event:tk.Event):
+        self._mouse_inside = True
+        if self._video:
+            self._show_cursor()
+
+    def _on_mouse_leave(self, event:tk.Event):
+        self._mouse_inside = False
+        if not self._drawing:
+            self._hide_cursor()
 
     def set_drawing_mode(self):
         self._drawing_mode = True
@@ -220,6 +266,7 @@ class VideoCanvas(ttk.Canvas):
 
     def set_brush_size(self, size:int):
         self._brush_size = size
+        self._update_cursor_scale()
 
     ###########################################################################
     ## Video navigation
