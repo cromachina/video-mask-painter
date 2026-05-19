@@ -21,7 +21,6 @@ __version__ = importlib.metadata.version(__package__)
 class AsyncTk(tk.Tk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.protocol('WM_DELETE_WINDOW', self.stop)
         self.running = False
         self.sleep_time = 1.0 / 60.0
 
@@ -80,6 +79,7 @@ class App(AsyncTk):
         self.title(f'{__package__} {__version__}')
         self.geometry('{}x{}'.format(1200, 800))
         ttk.Style('darkly')
+        self.protocol('WM_DELETE_WINDOW', self.on_exit)
 
         self.undo_limit = 100
         self.project = None
@@ -95,7 +95,7 @@ class App(AsyncTk):
         file_menu.add_command(label='Save As Project', command=self.save_as_project)
         file_menu.add_command(label='Set Project Video', command=self.set_project_video)
         file_menu.add_command(label='Render Video', command=self.render_video)
-        file_menu.add_command(label='Exit', command=self.exit)
+        file_menu.add_command(label='Exit', command=self.on_exit)
 
         # Video and drawing area
         self.video_canvas = VideoCanvas(self, width=1, height=1)
@@ -256,6 +256,24 @@ class App(AsyncTk):
         self.timeline.set_frame_count(self.video_canvas.get_frame_count())
         self.update_view()
 
+    @staticmethod
+    def saved_check(string):
+        def wrapped(func):
+            def wrapped(self):
+                if self.project and not self.project.is_saved():
+                    result = dialogs.Messagebox.yesnocancel(f'Save current project before {string}?', 'Save')
+                    if result == 'No':
+                        pass
+                    elif result == 'Yes':
+                        if not self.save_project():
+                            return
+                    else:
+                        return
+                func(self)
+            return wrapped
+        return wrapped
+
+    @saved_check('opening')
     def open_video(self):
         file_path = filedialog.askopenfilename(
             title='Open Video',
@@ -263,19 +281,15 @@ class App(AsyncTk):
         )
         if file_path:
             self.project = Project(ProjectState(), video_file_path=Path(file_path))
+            self.project.set_dirty()
             self.load_video(self.project.video_file_path)
 
+    @saved_check('exiting')
+    def on_exit(self):
+        self.stop()
+
+    @saved_check('opening')
     def open_project(self):
-        if self.project:
-            if not self.project.is_saved():
-                result = dialogs.Messagebox.yesnocancel('Save current project before opening?', 'Save')
-                if result == 'No':
-                    pass
-                elif result == 'Yes':
-                    if not self.save_project():
-                        return
-                else:
-                    return
         file_path = filedialog.askopenfilename(
             title='Open Project',
             filetypes=project_file_types,
@@ -327,10 +341,6 @@ class App(AsyncTk):
 
     def render_video(self):
         pass
-
-    def exit(self):
-        # TODO Unsaved work check
-        self.stop()
 
     def cleanup(self):
         self.destroy()
