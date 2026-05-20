@@ -202,7 +202,7 @@ class ColorPickerHover(ttk.Canvas):
         self._photoimage = None
         self._color = initial_color
         self._alpha = initial_alpha
-        self._popup = tk.Toplevel()
+        self._popup = tk.Toplevel(self)
         self._popup.overrideredirect(True)
         self._popup.geometry('250x150')
         self._popup.withdraw()

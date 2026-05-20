@@ -10,6 +10,7 @@ from ttkbootstrap_icons_bs import BootstrapIcon
 from tkinter import filedialog
 from ttkbootstrap import dialogs
 
+from . import asynctk
 from .util import *
 from .video_canvas import VideoCanvas
 from .project import *
@@ -19,36 +20,6 @@ from .color_picker import *
 
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
-
-class AsyncTk(tk.Tk):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.running = False
-        self.sleep_time = 1.0 / 60.0
-
-    def cleanup(self):
-        pass
-
-    def stop(self):
-        self.running = False
-        self.cleanup()
-
-    async def async_main_loop(self):
-        self.running = True
-        while self.running:
-            self.update()
-            await asyncio.sleep(self.sleep_time)
-
-class AsyncTkCallback:
-    tasks = set()
-
-    def __init__(self, func):
-        self.func = func
-
-    def __call__(self, *args, **kwargs):
-        task = asyncio.create_task(self.func(*args, **kwargs))
-        AsyncTkCallback.tasks.add(task)
-        task.add_done_callback(AsyncTkCallback.tasks.discard)
 
 def make_button(master, name, icon_name, command):
     icon = BootstrapIcon(icon_name, size=20, color='#ffffff', style='outline')
@@ -75,13 +46,12 @@ def make_separator(master):
     sep = ttk.Separator(master, orient=ttkc.VERTICAL)
     sep.pack(side=ttkc.LEFT, padx=5)
 
-class App(AsyncTk):
+class App(asynctk.AsyncTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title(f'{__package__} {__version__}')
         self.geometry('{}x{}'.format(1200, 800))
         ttk.Style('darkly')
-        self.protocol('WM_DELETE_WINDOW', self.on_exit)
         initial_color = (0, 0, 255)
         initial_alpha = 127
         initial_brush_size = 10
@@ -100,7 +70,7 @@ class App(AsyncTk):
         file_menu.add_command(label='Save As Project', command=self.save_as_project)
         file_menu.add_command(label='Set Project Video', command=self.set_project_video)
         file_menu.add_command(label='Render Video', command=self.render_video)
-        file_menu.add_command(label='Exit', command=self.on_exit)
+        file_menu.add_command(label='Exit', command=self.close_requested)
 
         # Video and drawing area
         self.video_canvas = VideoCanvas(self, initial_color, initial_alpha, width=1, height=1)
@@ -290,8 +260,8 @@ class App(AsyncTk):
             self.add_blank_keyframe()
 
     @saved_check('exiting')
-    def on_exit(self):
-        self.stop()
+    def close_requested(self):
+        super().close_requested()
 
     @saved_check('opening')
     def open_project(self):
@@ -349,9 +319,6 @@ class App(AsyncTk):
 
     def render_video(self):
         pass
-
-    def cleanup(self):
-        self.destroy()
 
     def update_to_selected(self):
         if self.project:
