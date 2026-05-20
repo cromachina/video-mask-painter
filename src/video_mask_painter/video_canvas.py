@@ -46,13 +46,15 @@ def normal_blend(dst, src, tint, alpha):
     return to_byte(res)
 
 class VideoCanvas(ttk.Canvas):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, *args, **kwargs):
+        super().__init__(master=master, *args, **kwargs)
         self._video = None
         self._video_photoimage = None
         self._video_image_array = None
         self._mask_image_array = None
         self._brush_size = 1
+        self._mask_color = initial_color
+        self._mask_alpha = initial_alpha
         self._drawing = False
         self._drawing_mode = True # False = erasing
         self._render_buffer = np.empty((1,1,3), dtype=np.ubyte)
@@ -99,9 +101,7 @@ class VideoCanvas(ttk.Canvas):
         clear_color = (0x33, 0x33, 0x33)
         if self._video:
             if self._mask_image_array is not None:
-                tint = np.array((0, 0, 255))
-                alpha = 127
-                composite = normal_blend(self._video_image_array, self._mask_image_array, tint, alpha)
+                composite = normal_blend(self._video_image_array, self._mask_image_array, np.array(self._mask_color), self._mask_alpha)
             else:
                 composite = self._video_image_array
             canvas_h = self.winfo_height()
@@ -264,6 +264,14 @@ class VideoCanvas(ttk.Canvas):
     def set_brush_size(self, size:int):
         self._brush_size = size
         self._update_cursor_scale()
+
+    def set_mask_color(self, color):
+        self._mask_color = color
+        self.update_view()
+
+    def set_mask_alpha(self, alpha):
+        self._mask_alpha = alpha
+        self.update_view()
 
     ###########################################################################
     ## Video navigation

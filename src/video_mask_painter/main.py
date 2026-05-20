@@ -15,6 +15,7 @@ from .video_canvas import VideoCanvas
 from .project import *
 from .timeline import *
 from .bar_scale import *
+from .color_picker import *
 
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
@@ -81,6 +82,9 @@ class App(AsyncTk):
         self.geometry('{}x{}'.format(1200, 800))
         ttk.Style('darkly')
         self.protocol('WM_DELETE_WINDOW', self.on_exit)
+        initial_color = (0, 0, 255)
+        initial_alpha = 127
+        initial_brush_size = 10
 
         self.undo_limit = 100
         self.project = None
@@ -99,7 +103,7 @@ class App(AsyncTk):
         file_menu.add_command(label='Exit', command=self.on_exit)
 
         # Video and drawing area
-        self.video_canvas = VideoCanvas(self, width=1, height=1)
+        self.video_canvas = VideoCanvas(self, initial_color, initial_alpha, width=1, height=1)
         self.video_canvas.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
@@ -154,10 +158,16 @@ class App(AsyncTk):
 
         # Brush size selector
         brush_scale = BarScale(
-            button_frame, label='Brush size', value=1, minval=1, maxval=1000,
+            button_frame, label='Brush size', value=initial_brush_size, minval=1, maxval=1000,
             scale_type=BarScale.CURVE, height=30, width=150)
         brush_scale.pack(side=ttkc.LEFT, padx=5)
         brush_scale.value_updated_event += self.on_brush_size_changed
+
+        # Mask tint selector
+        self.color_picker = ColorPickerHover(button_frame, initial_color, initial_alpha, height=30, width=40)
+        self.color_picker.pack(side=ttkc.LEFT)
+        self.color_picker.color_selected_event += self.video_canvas.set_mask_color
+        self.color_picker.alpha_selected_event += self.video_canvas.set_mask_alpha
 
         button_frame = ttk.Frame(self)
         button_frame.pack()
@@ -185,6 +195,8 @@ class App(AsyncTk):
         self.bind('<Shift-Right>', self.next_keyframe)
         self.bind('<Control-s>', self.save_project)
         self.bind('<Control-S>', self.save_as_project)
+        self.bind('<Control-z>', self.undo)
+        self.bind('<z>', self.redo)
 
         #self.bind('<KeyPress>', print)
 
@@ -349,13 +361,13 @@ class App(AsyncTk):
             if state.selected_index:
                 self.video_canvas.set_frame_pos(state.selected_index)
 
-    def undo(self):
+    def undo(self, *args):
         if self.project:
             self.project.undo()
             self.update_to_selected()
             self.update_view()
 
-    def redo(self):
+    def redo(self, *args):
         if self.project:
             self.project.redo()
             self.update_to_selected()

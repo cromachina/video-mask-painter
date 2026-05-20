@@ -8,6 +8,9 @@ import numpy as np
 
 from .util import *
 
+_checker_params = (0.1, 0.3, 5)
+_color_picker_tag = "colorpicker"
+
 def _make_sat_value_gradient(width, height, tint):
     sat = np.tile(np.linspace((1, 1, 1), tint, width), (height, 1)).reshape(height, width, 3)
     val = np.linspace((1, 1, 1), (0, 0, 0), height).repeat(width, axis=0).reshape(height, width, 3)
@@ -24,7 +27,7 @@ def _make_checkers(col_a, col_b, checksize, width, height):
 def _make_alpha_gradient(width, height, tint):
     color = np.full((height, width, 3), fill_value=tint)
     alpha = np.linspace(1.0, 0.0, height).repeat(width, axis=0).reshape(height, width, 1)
-    check = _make_checkers(0.1, 0.3, 5, width, height)
+    check = _make_checkers(*_checker_params, width, height)
     res = color * alpha + check * (1 - alpha)
     return (res * 255).astype(np.ubyte)
 
@@ -36,6 +39,12 @@ def _make_hue_gradient(width, height):
     res = res.repeat(width, axis=0).reshape(height, width, 3)
     return (res * 255).astype(np.ubyte)
 
+def _make_color_preview(width, height, color, alpha):
+    color = np.full((height, width, 3), fill_value=color)
+    check = _make_checkers(*_checker_params, width, height)
+    res = color * alpha + check * (1 - alpha)
+    return (res * 255).astype(np.ubyte)
+
 def _color_to_position(color):
     h, s, v = colorsys.rgb_to_hsv(*map(lambda x: x / 255.0, color))
     return h, s, (1 - v)
@@ -43,6 +52,7 @@ def _color_to_position(color):
 class ColorBox(ttk.Canvas):
     def __init__(self, master=None, initial_color=(0, 0, 0), *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
+        add_tag(self, _color_picker_tag)
         self._gradient_id = self.create_image(0, 0, anchor=ttkc.NW)
         self._selector_size = 6
         self._selector_id = self.create_oval(0, 0, self._selector_size, self._selector_size, fill='', outline='#ffffff')
@@ -109,13 +119,14 @@ class ColorBox(ttk.Canvas):
         self._set_color_rel(s, v)
 
     def set_hue(self, hue):
-        self._hue = hue
+        self._hue = hue / 255
         self._remake_gradient()
         self.color_selected_event(self.get_color())
 
 class ColorBar(ttk.Canvas):
-    def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=0, hue_mode=False, *args, **kwargs):
+    def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, hue_mode=False, *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
+        add_tag(self, _color_picker_tag)
         self._background_id = self.create_image(0, 0, anchor=ttkc.NW)
         self._selector_id = self.create_rectangle(
             0, 0, 0, 0,
@@ -158,26 +169,99 @@ class ColorBar(ttk.Canvas):
         h = self.winfo_height()
         self._selector_pos = clamp(0, 1, event.y / h)
         self._update_selector()
-        self.color_selected_event(self._selector_pos if self._hue_mode else 1 - self._selector_pos)
+        value = int((self._selector_pos if self._hue_mode else 1 - self._selector_pos) * 255)
+        self.color_selected_event(value)
 
     def set_color(self, color):
         self._color = color
         self._remake_gradient()
 
 class ColorPicker(ttk.Frame):
-    def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=0, *args, **kwargs):
+    def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
-        self._color_box = ColorBox(self, initial_color)
-        self._color_box.pack(side=ttkc.LEFT)
-        self._alpha_bar = ColorBar(self, initial_color, initial_alpha, width=20)
-        self._alpha_bar.pack(side=ttkc.LEFT, padx=10, fill=ttkc.Y)
-        self._color_box.color_selected_event += self._alpha_bar.set_color
+        add_tag(self, _color_picker_tag)
+        self._color_box = ColorBox(self, initial_color, height=0, width=0)
+        self._color_box.pack(side=ttkc.LEFT, expand=True, fill=ttkc.BOTH)
+        self._alpha_bar = ColorBar(self, initial_color, initial_alpha, height=1, width=20)
+        self._alpha_bar.pack(side=ttkc.LEFT, padx=7, fill=ttkc.Y)
         self._hue_bar = ColorBar(self, initial_color, hue_mode=True, width=20)
         self._hue_bar.pack(side=ttkc.LEFT, fill=ttkc.Y)
+        self._color_box.color_selected_event += self._alpha_bar.set_color
         self._hue_bar.color_selected_event += self._color_box.set_hue
         self.color_selected_event = self._color_box.color_selected_event
         self.alpha_selected_event = self._alpha_bar.color_selected_event
 
-class ColorPickerButton(ttk.Canvas):
-    def __init__(self, master=None, *args, **kwargs):
+class ColorPickerHover(ttk.Canvas):
+    def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
+        self._id = self.create_image(0, 0, anchor=ttkc.NW)
+        self._border_id = self.create_rectangle(
+            0, 0, 0, 0,
+            fill='',
+            outline='#000000')
+        self._photoimage = None
+        self._color = initial_color
+        self._alpha = initial_alpha
+        self._popup = tk.Toplevel()
+        self._popup.overrideredirect(True)
+        self._popup.geometry('250x150')
+        self._popup.withdraw()
+        self._color_picker = ColorPicker(self._popup, initial_color, initial_alpha)
+        self._color_picker.pack(fill=ttkc.BOTH, expand=True, padx=7, pady=7)
+        self._timeout = None
+        self._stay_open = False
+        self.bind('<Configure>', self._on_resize)
+        self.bind('<Enter>', self._on_enter)
+        self.bind('<Leave>', self._on_leave)
+        self._popup.bind('<Enter>', self._on_popup_enter)
+        self._color_picker.bind_class(_color_picker_tag, '<Button-1>', self._on_popup_click, '+')
+        self._popup.bind('<Leave>', self._on_leave)
+        self.winfo_toplevel().bind('<Button-1>', self._close_popup, '+')
+        self._color_picker.color_selected_event += self._on_color_selected
+        self._color_picker.alpha_selected_event += self._on_alpha_selected
+        self.color_selected_event = self._color_picker.color_selected_event
+        self.alpha_selected_event = self._color_picker.alpha_selected_event
+
+    def _update_color(self):
+        h = self.winfo_height()
+        w = self.winfo_width()
+        color = _make_color_preview(w, h, np.array(self._color) / 255.0, self._alpha / 255)
+        self._photoimage = numpy_to_photoimage(color)
+        self.itemconfig(self._id, image=self._photoimage)
+
+    def _on_resize(self, event:tk.Event):
+        h = self.winfo_height()
+        w = self.winfo_width()
+        self.coords(self._border_id, 0, 0, w - 1, h - 1)
+        self._update_color()
+
+    def _on_enter(self, event:tk.Event):
+        self._popup.deiconify()
+        y = self.winfo_rooty() - self._popup.winfo_height()
+        x = self.winfo_rootx() - self._popup.winfo_width() + self.winfo_width()
+        self._popup.geometry('+{}+{}'.format(x, y))
+
+    def _on_leave(self, event):
+        if not self._stay_open:
+            self._timeout = self.after(250, self._close_popup)
+
+    def _close_popup(self, *args):
+        self._popup.withdraw()
+        self._stay_open = False
+
+    def _on_popup_enter(self, event):
+        if self._timeout:
+            self.after_cancel(self._timeout)
+            self._timeout = None
+
+    def _on_popup_click(self, event):
+        print('clicked')
+        self._stay_open = True
+
+    def _on_color_selected(self, color):
+        self._color = color
+        self._update_color()
+
+    def _on_alpha_selected(self, alpha):
+        self._alpha = alpha
+        self._update_color()

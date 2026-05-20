@@ -81,6 +81,9 @@ def numpy_to_photoimage(array:np.ndarray):
     data = ppm_header + array.tobytes()
     return tk.PhotoImage(width=w, height=h, data=data, format='PPM')
 
+def add_tag(widget:tk.Widget, tag):
+    widget.bindtags((tag,) + widget.bindtags())
+
 class timeit():
     def __init__(self, name):
         self.name = name

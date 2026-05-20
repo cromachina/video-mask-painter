@@ -60,6 +60,7 @@ class BarScale(ttk.Canvas):
         self.bind('<Button-4>', self._on_incr_value)
         self.bind('<Button-5>', self._on_decr_value)
         self.bind('<MouseWheel>', self._on_mousewheel)
+        self.set_value(value)
 
     def get_value(self):
         return self._value
