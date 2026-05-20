@@ -217,6 +217,7 @@ class ColorPickerHover(ttk.Canvas):
         self._color_picker.bind_class(_color_picker_tag, '<Button-1>', self._on_popup_click, '+')
         self._popup.bind('<Leave>', self._on_leave)
         self.winfo_toplevel().bind('<Button-1>', self._close_popup, '+')
+        self.winfo_toplevel().bind('<FocusOut>', self._close_popup, '+')
         self._color_picker.color_selected_event += self._on_color_selected
         self._color_picker.alpha_selected_event += self._on_alpha_selected
         self.color_selected_event = self._color_picker.color_selected_event
