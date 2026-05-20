@@ -75,6 +75,12 @@ def event_vec(event:tk.Event):
 def swap(vec):
     return np.array((vec[1], vec[0]))
 
+def numpy_to_photoimage(array:np.ndarray):
+    h, w = array.shape[:2]
+    ppm_header = f'P6 {w} {h} 255 '.encode()
+    data = ppm_header + array.tobytes()
+    return tk.PhotoImage(width=w, height=h, data=data, format='PPM')
+
 class timeit():
     def __init__(self, name):
         self.name = name

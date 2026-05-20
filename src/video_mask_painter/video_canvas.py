@@ -35,7 +35,7 @@ def comp(a, b):
     return mul(a, _rangemax - b)
 
 @numba.vectorize
-def blend(dst, src, tint, alpha):
+def normal_blend(dst, src, tint, alpha):
     Cd = to_short(dst)
     Cs = to_short(src)
     tint = to_short(tint)
@@ -49,7 +49,7 @@ class VideoCanvas(ttk.Canvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._video = None
-        self._video_photo_image = None
+        self._video_photoimage = None
         self._video_image_array = None
         self._mask_image_array = None
         self._brush_size = 1
@@ -101,7 +101,7 @@ class VideoCanvas(ttk.Canvas):
             if self._mask_image_array is not None:
                 tint = np.array((0, 0, 255))
                 alpha = 127
-                composite = blend(self._video_image_array, self._mask_image_array, tint, alpha)
+                composite = normal_blend(self._video_image_array, self._mask_image_array, tint, alpha)
             else:
                 composite = self._video_image_array
             canvas_h = self.winfo_height()
@@ -118,11 +118,8 @@ class VideoCanvas(ttk.Canvas):
                 borderMode=cv2.BORDER_CONSTANT, borderValue=clear_color, flags=cv2.INTER_AREA)
         else:
             self._render_buffer[:,:] = clear_color
-        height, width = self._render_buffer.shape[:2]
-        ppm_header = f'P6 {width} {height} 255 '.encode()
-        data = ppm_header + self._render_buffer.tobytes()
-        self._video_photo_image = tk.PhotoImage(width=width, height=height, data=data, format='PPM')
-        self.itemconfig(self._video_id, image=self._video_photo_image)
+        self._video_photoimage = numpy_to_photoimage(self._render_buffer)
+        self.itemconfig(self._video_id, image=self._video_photoimage)
 
     def _on_resize(self, event:tk.Event):
         h = self.winfo_height()
@@ -315,7 +312,7 @@ class VideoCanvas(ttk.Canvas):
         self._video.release()
         self._video = None
         self._video_image_array = None
-        self._video_photo_image = None
+        self._video_photoimage = None
         self._mask_image_array = None
         self._frame_count = 0
         self._fps = 60
