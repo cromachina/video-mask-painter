@@ -256,7 +256,6 @@ class ColorPickerHover(ttk.Canvas):
             self._timeout = None
 
     def _on_popup_click(self, event):
-        print('clicked')
         self._stay_open = True
 
     def _on_color_selected(self, color):

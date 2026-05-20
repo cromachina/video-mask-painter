@@ -198,8 +198,6 @@ class App(AsyncTk):
         self.bind('<Control-z>', self.undo)
         self.bind('<z>', self.redo)
 
-        #self.bind('<KeyPress>', print)
-
     def update_view(self):
         if self.project:
             self.timeline.clear_keyframes()
