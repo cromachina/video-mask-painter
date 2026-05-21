@@ -10,13 +10,7 @@ from ttkbootstrap_icons_bs import BootstrapIcon
 from tkinter import filedialog
 from ttkbootstrap import dialogs
 
-from . import asynctk
-from .util import *
-from .video_canvas import VideoCanvas
-from .project import *
-from .timeline import *
-from .bar_scale import *
-from .color_picker import *
+from . import asynctk, util, video_canvas, project, timeline, bar_scale, color_picker, video_export
 
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
@@ -60,9 +54,9 @@ class App(asynctk.AsyncTk):
         self.project = None
 
         # Menu bar
-        menubar = tk.Menu(self)
+        menubar = ttk.Menu(self)
         self.config(menu=menubar)
-        file_menu = tk.Menu(menubar)
+        file_menu = ttk.Menu(menubar)
         menubar.add_cascade(label='File', menu=file_menu)
         file_menu.add_command(label='Open Video as New Project', command=self.open_video)
         file_menu.add_command(label='Open Project', command=self.open_project)
@@ -73,7 +67,7 @@ class App(asynctk.AsyncTk):
         file_menu.add_command(label='Exit', command=self.close_requested)
 
         # Video and drawing area
-        self.video_canvas = VideoCanvas(self, initial_color, initial_alpha, width=1, height=1)
+        self.video_canvas = video_canvas.VideoCanvas(self, initial_color, initial_alpha, width=1, height=1)
         self.video_canvas.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
@@ -127,14 +121,14 @@ class App(asynctk.AsyncTk):
         self.drawing_mode_var.trace_add('write', self.on_drawing_mode_changed)
 
         # Brush size selector
-        brush_scale = BarScale(
+        brush_scale = bar_scale.BarScale(
             button_frame, label='Brush size', value=initial_brush_size, minval=1, maxval=1000,
-            scale_type=BarScale.CURVE, height=30, width=150)
+            scale_type=bar_scale.BarScale.CURVE, height=30, width=150)
         brush_scale.pack(side=ttkc.LEFT, padx=5)
         brush_scale.value_updated_event += self.on_brush_size_changed
 
         # Mask tint selector
-        self.color_picker = ColorPickerHover(button_frame, initial_color, initial_alpha, height=30, width=40)
+        self.color_picker = color_picker.ColorPickerHover(button_frame, initial_color, initial_alpha, height=30, width=40)
         self.color_picker.pack(side=ttkc.LEFT)
         self.color_picker.color_selected_event += self.video_canvas.set_mask_color
         self.color_picker.alpha_selected_event += self.video_canvas.set_mask_alpha
@@ -148,7 +142,7 @@ class App(asynctk.AsyncTk):
         self.video_file_name_label.pack(side=ttkc.LEFT)
 
         # Timeline and info
-        self.timeline = Timeline(self, height=50)
+        self.timeline = timeline.Timeline(self, height=50)
         self.timeline.pack(fill=ttkc.X)
         self.timeline.position_updated_event += self.video_canvas.set_frame_pos
         self.video_canvas.frame_changing_event += self.on_frame_changing
@@ -255,7 +249,7 @@ class App(asynctk.AsyncTk):
             filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
         )
         if file_path:
-            self.project = Project(ProjectState(), video_file_path=Path(file_path))
+            self.project = project.Project(project.ProjectState(), video_file_path=Path(file_path))
             self.load_video(self.project.video_file_path)
             self.add_blank_keyframe()
 
@@ -267,10 +261,10 @@ class App(asynctk.AsyncTk):
     def open_project(self):
         file_path = filedialog.askopenfilename(
             title='Open Project',
-            filetypes=project_file_types,
+            filetypes=project.project_file_types,
         )
         if file_path:
-            self.project = load_project(file_path)
+            self.project = project.load_project(file_path)
             try:
                 self.load_video(self.project.video_file_path)
             except:
@@ -283,7 +277,7 @@ class App(asynctk.AsyncTk):
     def save_project(self, *args):
         if self.project:
             if self.project.project_file_path:
-                save_project(self.project, self.project.project_file_path)
+                project.save_project(self.project, self.project.project_file_path)
                 self.project.set_saved()
                 return True
             else:
@@ -294,11 +288,11 @@ class App(asynctk.AsyncTk):
         if self.project:
             file_path = filedialog.asksaveasfilename(
                 title='Save As',
-                filetypes=project_file_types,
+                filetypes=project.project_file_types,
             )
             if file_path:
                 file_path = Path(file_path)
-                save_project(self.project, file_path)
+                project.save_project(self.project, file_path)
                 self.project.set_saved()
                 self.project.project_file_path = file_path
                 return True
@@ -318,7 +312,15 @@ class App(asynctk.AsyncTk):
             self.open_video()
 
     def render_video(self):
-        pass
+        if self.project:
+            util.push_state_all(self, ttkc.DISABLED)
+            export_window = video_export.VideoExport(self, self.project)
+            export_window.transient(self)
+            export_window.grab_set()
+            def done(e):
+                util.pop_state_all(self)
+                export_window.grab_release()
+            export_window.bind('<Destroy>', done, '+')
 
     def update_to_selected(self):
         if self.project:
@@ -364,7 +366,7 @@ class App(asynctk.AsyncTk):
             if keyframe and keyframe.index == index:
                 return
             data = self.video_canvas.get_blank_image_array()
-            keyframe = Keyframe(index=index, data=data)
+            keyframe = project.Keyframe(index=index, data=data)
             state = state.insert_keyframe(keyframe).set(selected_index=index)
             self.project.append(state, self.undo_limit)
             self.update_view()

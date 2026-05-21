@@ -4,10 +4,14 @@ import tkinter as tk
 
 from pyrsistent import *
 import numpy as np
+import cv2
+import numba
 
+@numba.vectorize
 def lerp(a, b, t):
     return (b - a) * t + a
 
+@numba.vectorize
 def bilinear(a, b, c, t):
     ab = lerp(a, b, t)
     bc = lerp(b, c, t)
@@ -75,6 +79,54 @@ def event_vec(event:tk.Event):
 def swap(vec):
     return np.array((vec[1], vec[0]))
 
+_rangemax = 0x3fff
+
+@numba.vectorize
+def to_short(value):
+    value = np.short(value)
+    return (value << 6) | (value >> 2)
+
+@numba.vectorize
+def to_byte(value):
+    return np.ubyte(value >> 6)
+
+@numba.vectorize
+def mul(a, b):
+    return (a * b) >> 14
+
+@numba.vectorize
+def comp(a, b):
+    return mul(a, _rangemax - b)
+
+@numba.vectorize
+def lerp_ubyte(a, b, t):
+    a = to_short(a)
+    b = to_short(b)
+    t = to_short(t)
+    return to_byte(mul(b - a, t) + a)
+
+@numba.vectorize
+def normal_blend(dst, src, tint, alpha):
+    Cd = to_short(dst)
+    Cs = to_short(src)
+    tint = to_short(tint)
+    alpha = to_short(alpha)
+    As = mul(Cs, alpha)
+    Cs = mul(mul(Cs, As), tint)
+    res = Cs + comp(Cd, As)
+    return to_byte(res)
+
+def mosaic(image, mask, mosaic_percent, out=None):
+    original_size = swap(image.shape[:2])
+    min_dim = int(min(original_size) * (mosaic_percent / 100))
+    min_dim = max(4, min_dim)
+    scale_dimension = (original_size[0] // min_dim, original_size[1] // min_dim)
+    mosaic_image = cv2.resize(image, scale_dimension, interpolation=cv2.INTER_AREA)
+    if out is None:
+        out = np.empty_like(image)
+    mosaic_image = cv2.resize(mosaic_image, original_size, out, interpolation=cv2.INTER_NEAREST).reshape(image.shape)
+    return lerp_ubyte(image, mosaic_image, mask)
+
 def numpy_to_photoimage(array:np.ndarray):
     h, w = array.shape[:2]
     ppm_header = f'P6 {w} {h} 255 '.encode()
@@ -83,6 +135,23 @@ def numpy_to_photoimage(array:np.ndarray):
 
 def add_tag(widget:tk.Widget, tag):
     widget.bindtags((tag,) + widget.bindtags())
+
+def push_state_all(widget, state):
+    try:
+        widget.__state = widget.config('state')
+        widget.config(state=state)
+    except:
+        pass
+    for child in widget.winfo_children():
+        push_state_all(child, state)
+
+def pop_state_all(widget):
+    try:
+        widget.config(state=widget.__state)
+    except:
+        pass
+    for child in widget.winfo_children():
+        pop_state_all(child)
 
 class timeit():
     def __init__(self, name):

@@ -8,42 +8,11 @@ import ttkbootstrap.constants as ttkc
 
 import numpy as np
 import cv2
-import numba
 
 from .util import *
 
 _scroll_zoom_levels = [2 ** (x / 4) for x in range(-28, 21)]
 _default_zoom_level = 28
-
-_rangemax = 0x3fff
-
-@numba.vectorize
-def to_short(value):
-    value = np.short(value)
-    return (value << 6) | (value >> 2)
-
-@numba.vectorize
-def to_byte(value):
-    return np.ubyte(value >> 6)
-
-@numba.vectorize
-def mul(a, b):
-    return (a * b) >> 14
-
-@numba.vectorize
-def comp(a, b):
-    return mul(a, _rangemax - b)
-
-@numba.vectorize
-def normal_blend(dst, src, tint, alpha):
-    Cd = to_short(dst)
-    Cs = to_short(src)
-    tint = to_short(tint)
-    alpha = to_short(alpha)
-    As = mul(Cs, alpha)
-    Cs = mul(mul(Cs, As), tint)
-    res = Cs + comp(Cd, As)
-    return to_byte(res)
 
 class VideoCanvas(ttk.Canvas):
     def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, *args, **kwargs):
