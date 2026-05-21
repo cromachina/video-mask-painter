@@ -63,8 +63,8 @@ class App(asynctk.AsyncTk):
         file_menu.add_command(label='Save Project', command=self.save_project)
         file_menu.add_command(label='Save As Project', command=self.save_as_project)
         file_menu.add_command(label='Set Project Video', command=self.set_project_video)
-        file_menu.add_command(label='Render Video', command=self.render_video)
         file_menu.add_command(label='Exit', command=self.close_requested)
+        menubar.add_command(label='Render Video', command=self.render_video)
 
         # Video and drawing area
         self.video_canvas = video_canvas.VideoCanvas(self, initial_color, initial_alpha, width=1, height=1)
