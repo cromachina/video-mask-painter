@@ -6,7 +6,7 @@ import ttkbootstrap.constants as ttkc
 
 import numpy as np
 
-from .util import *
+from . import util
 
 _checker_params = (0.1, 0.3, 5)
 _color_picker_tag = "colorpicker"
@@ -52,7 +52,7 @@ def _color_to_position(color):
 class ColorBox(ttk.Canvas):
     def __init__(self, master=None, initial_color=(0, 0, 0), *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
-        add_tag(self, _color_picker_tag)
+        util.add_tag(self, _color_picker_tag)
         self._gradient_id = self.create_image(0, 0, anchor=ttkc.NW)
         self._selector_size = 6
         self._selector_id = self.create_oval(0, 0, self._selector_size, self._selector_size, fill='', outline='#ffffff')
@@ -63,7 +63,7 @@ class ColorBox(ttk.Canvas):
         self.bind('<Configure>', self._on_resize)
         self.bind('<Button-1>', self._on_click)
         self.bind('<B1-Motion>', self._on_click)
-        self.color_selected_event = Observable()
+        self.color_selected_event = util.Observable()
 
     def _to_rel(self, xy):
         relx = xy[0] / (self.winfo_width() - 1)
@@ -80,7 +80,7 @@ class ColorBox(ttk.Canvas):
         w = self.winfo_width()
         tint = colorsys.hsv_to_rgb(self._hue, 1, 1)
         gradient = _make_sat_value_gradient(w, h, tint)
-        self._photoimage = numpy_to_photoimage(gradient)
+        self._photoimage = util.numpy_to_photoimage(gradient)
         self.itemconfig(self._gradient_id, image=self._photoimage)
 
     def _update_selector(self):
@@ -103,8 +103,8 @@ class ColorBox(ttk.Canvas):
         self.color_selected_event(self.get_color())
 
     def _on_click(self, event:tk.Event):
-        y = clamp(0, self.winfo_height() - 1, event.y)
-        x = clamp(0, self.winfo_width() - 1, event.x)
+        y = util.clamp(0, self.winfo_height() - 1, event.y)
+        x = util.clamp(0, self.winfo_width() - 1, event.x)
         self._set_color_position(x, y)
 
     def get_color(self) -> None:
@@ -126,7 +126,7 @@ class ColorBox(ttk.Canvas):
 class ColorBar(ttk.Canvas):
     def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, hue_mode=False, *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
-        add_tag(self, _color_picker_tag)
+        util.add_tag(self, _color_picker_tag)
         self._background_id = self.create_image(0, 0, anchor=ttkc.NW)
         self._selector_id = self.create_rectangle(
             0, 0, 0, 0,
@@ -143,7 +143,7 @@ class ColorBar(ttk.Canvas):
         self.bind('<Configure>', self._on_resize)
         self.bind('<Button-1>', self._on_click)
         self.bind('<B1-Motion>', self._on_click)
-        self.color_selected_event = Observable()
+        self.color_selected_event = util.Observable()
 
     def _remake_gradient(self):
         h = self.winfo_height()
@@ -152,7 +152,7 @@ class ColorBar(ttk.Canvas):
             gradient = _make_hue_gradient(w, h)
         else:
             gradient = _make_alpha_gradient(w, h, np.array(self._color) / 255.0)
-        self._photoimage = numpy_to_photoimage(gradient)
+        self._photoimage = util.numpy_to_photoimage(gradient)
         self.itemconfig(self._background_id, image=self._photoimage)
 
     def _update_selector(self):
@@ -167,7 +167,7 @@ class ColorBar(ttk.Canvas):
 
     def _on_click(self, event:tk.Event):
         h = self.winfo_height()
-        self._selector_pos = clamp(0, 1, event.y / h)
+        self._selector_pos = util.clamp(0, 1, event.y / h)
         self._update_selector()
         value = int((self._selector_pos if self._hue_mode else 1 - self._selector_pos) * 255)
         self.color_selected_event(value)
@@ -179,7 +179,7 @@ class ColorBar(ttk.Canvas):
 class ColorPicker(ttk.Frame):
     def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
-        add_tag(self, _color_picker_tag)
+        util.add_tag(self, _color_picker_tag)
         self._color_box = ColorBox(self, initial_color, height=0, width=0)
         self._color_box.pack(side=ttkc.LEFT, expand=True, fill=ttkc.BOTH)
         self._alpha_bar = ColorBar(self, initial_color, initial_alpha, height=1, width=20)
@@ -227,7 +227,7 @@ class ColorPickerHover(ttk.Canvas):
         h = self.winfo_height()
         w = self.winfo_width()
         color = _make_color_preview(w, h, np.array(self._color) / 255.0, self._alpha / 255)
-        self._photoimage = numpy_to_photoimage(color)
+        self._photoimage = util.numpy_to_photoimage(color)
         self.itemconfig(self._id, image=self._photoimage)
 
     def _on_resize(self, event:tk.Event):

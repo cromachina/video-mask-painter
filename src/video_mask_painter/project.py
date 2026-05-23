@@ -8,7 +8,7 @@ from pyrsistent import *
 import numpy as np
 import cv2
 
-from .util import *
+from . import util
 
 class Keyframe(PClass):
     index = field(type=int)
@@ -59,7 +59,7 @@ class ProjectState(PClass):
 
     def insert_keyframe(self, keyframe:Keyframe):
         ix = bisect.bisect(self.keyframes, keyframe.index, key=lambda x: x.index)
-        return self.set(keyframes=pvector_insert(self.keyframes, keyframe, ix))
+        return self.set(keyframes=util.pvector_insert(self.keyframes, keyframe, ix))
 
     def remove_keyframe(self, index:int):
         if not self.keyframes:

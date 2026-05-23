@@ -11,7 +11,7 @@ from sdl2.ext.window import _check_video_init
 from sdl2.ext.err import raise_sdl_err
 import ctypes
 
-from .util import *
+from . import util
 
 sdl2.ext.init()
 
@@ -37,7 +37,7 @@ class StreamingTexture():
         pixels = ctypes.c_void_p(0)
         pitch = ctypes.c_int(0)
         sdl2.SDL_LockTexture(self._texture, None, ctypes.pointer(pixels), ctypes.pointer(pitch))
-        dst = np.ctypeslib.as_array(ctypes.cast(pixels, ctypes.POINTER(ctypes.c_uint8)), tuple(swap(self._size)) + (4,))
+        dst = np.ctypeslib.as_array(ctypes.cast(pixels, ctypes.POINTER(ctypes.c_uint8)), tuple(util.swap(self._size)) + (4,))
         func(dst)
         sdl2.SDL_UnlockTexture(self._texture)
 
@@ -112,9 +112,9 @@ class VideoCanvas(tk.Frame):
         self.bind('<Enter>', self._on_mouse_enter)
         self.bind('<Leave>', self._on_mouse_leave)
         self.winfo_toplevel().update_hook += self._update_view
-        self.frame_changing_event = Observable()
-        self.drawing_started_event = Observable()
-        self.drawing_finished_event = Observable()
+        self.frame_changing_event = util.Observable()
+        self.drawing_started_event = util.Observable()
+        self.drawing_finished_event = util.Observable()
         self.config(cursor='none')
 
     def _update_hook(self, *args):
@@ -141,7 +141,7 @@ class VideoCanvas(tk.Frame):
         self._sdl_window.renderer.clear(sdl2.ext.Color(*clear_color))
         if self._video:
             canvas_size = np.array((self.winfo_width(), self.winfo_height()))
-            image_size = swap(np.array(self._video_image_array.shape[:2]))
+            image_size = util.swap(np.array(self._video_image_array.shape[:2]))
             offset = (-image_size * 0.5 + self._view_position) * zoom + canvas_size * 0.5
             size = image_size * zoom
             rect = (*offset, *size)
@@ -184,7 +184,7 @@ class VideoCanvas(tk.Frame):
 
     def _zoom(self, level_delta:int, event:tk.Event):
         self._zoom_level += level_delta
-        self._zoom_level = clamp(0, len(_scroll_zoom_levels) - 1, self._zoom_level)
+        self._zoom_level = util.clamp(0, len(_scroll_zoom_levels) - 1, self._zoom_level)
         self._regenerate_brush_texture()
         self.update_view()
 
@@ -203,7 +203,7 @@ class VideoCanvas(tk.Frame):
             self.show_cursor()
 
     def _on_pan_move(self, event:tk.Event):
-        current_pos = event_vec(event)
+        current_pos = util.event_vec(event)
         zoom = self._get_zoom_factor()
         delta = (current_pos - self._last_mouse_pos) / zoom
         self._view_position += delta
@@ -230,7 +230,7 @@ class VideoCanvas(tk.Frame):
         self.pause()
         self.show_cursor()
         self._drawing = True
-        self._last_drawing_pos = self._mouse_to_view(event_vec(event))
+        self._last_drawing_pos = self._mouse_to_view(util.event_vec(event))
         self.drawing_started_event()
         if self._mask_image_array is not None:
             self._mask_image_array = self._mask_image_array.copy()
@@ -247,7 +247,7 @@ class VideoCanvas(tk.Frame):
     def _on_draw_move(self, event:tk.Event):
         if not self._video:
             return
-        current_pos = event_vec(event)
+        current_pos = util.event_vec(event)
         brush_pos = self._mouse_to_view(current_pos)
         color = 0xff if self._drawing_mode else 0x00
         cv2.line(
@@ -257,7 +257,7 @@ class VideoCanvas(tk.Frame):
         self._last_drawing_pos = brush_pos
 
     def _on_mouse_move(self, event:tk.Event):
-        self._mouse_pos = event_vec(event)
+        self._mouse_pos = util.event_vec(event)
         if self._panning_view:
             self._on_pan_move(event)
         elif self._drawing and self._mask_image_array is not None:
@@ -265,7 +265,7 @@ class VideoCanvas(tk.Frame):
             self.update_view()
             self._update_view()
         self.update_view()
-        self._last_mouse_pos = event_vec(event)
+        self._last_mouse_pos = util.event_vec(event)
 
     def hide_cursor(self):
         self._cursor_visible = False
@@ -380,8 +380,8 @@ class VideoCanvas(tk.Frame):
         self._video = cv2.VideoCapture(str(file_path))
         self._frame_count = int(self._video.get(cv2.CAP_PROP_FRAME_COUNT))
         self._fps = int(self._video.get(cv2.CAP_PROP_FPS))
-        self._video_texture = self._sdl_window.create_texture(swap(self.get_video_size()))
-        self._mask_texture = self._sdl_window.create_texture(swap(self.get_video_size()))
+        self._video_texture = self._sdl_window.create_texture(util.swap(self.get_video_size()))
+        self._mask_texture = self._sdl_window.create_texture(util.swap(self.get_video_size()))
         self.next_frame()
         self.reset_view()
 
@@ -419,8 +419,8 @@ class VideoCanvas(tk.Frame):
         return int(self._video.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(self._video.get(cv2.CAP_PROP_FRAME_WIDTH))
 
     def get_time_string(self) -> str:
-        curr_time = format_time(self.get_frame_pos(), self.get_fps())
-        total_time = format_time(self.get_frame_count(), self.get_fps())
+        curr_time = util.format_time(self.get_frame_pos(), self.get_fps())
+        total_time = util.format_time(self.get_frame_count(), self.get_fps())
         return f'{curr_time} / {total_time}'
 
     def play(self):

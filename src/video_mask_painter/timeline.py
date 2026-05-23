@@ -5,7 +5,7 @@ import tkinter as tk
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 
-from .util import *
+from . import util
 
 _side_pad = 15
 
@@ -107,7 +107,7 @@ class Timeline(ttk.Canvas):
         self.tag_bind(self._background_area, '<Motion>', self._on_motion)
         self.tag_bind(self._background_area, '<ButtonRelease-1>', self._on_drag_stop)
         self.bind('<Destroy>', self._on_destroy)
-        self.position_updated_event = Observable()
+        self.position_updated_event = util.Observable()
 
     def set_frame_count(self, frame_count:int):
         self._frame_count = frame_count
@@ -168,7 +168,7 @@ class Timeline(ttk.Canvas):
 
     def _event_to_position(self, event:tk.Event):
         w = self.winfo_width() - _side_pad * 2
-        return clamp(0.0, 1.0, (event.x - _side_pad) / w)
+        return util.clamp(0.0, 1.0, (event.x - _side_pad) / w)
 
     def _update_marker_position(self, event:tk.Event):
         position = self._event_to_position(event)

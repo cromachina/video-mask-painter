@@ -4,7 +4,7 @@ import ttkbootstrap.constants as ttkc
 
 import numpy as np
 
-from .util import *
+from . import util
 
 _power_points = [
     np.array((0, 0)),
@@ -50,8 +50,8 @@ class BarScale(ttk.Canvas):
         self._dragging = False
         self._precise_dragging = False
         self._scale_type = scale_type
-        self.value_updated_event = Observable()
-        self.update_stopped_event = Observable()
+        self.value_updated_event = util.Observable()
+        self.update_stopped_event = util.Observable()
         self.bind('<Configure>', self._on_resize)
         self.bind('<Button-1>', self._on_drag_start)
         self.bind('<ButtonRelease-1>', self._on_drag_stop)
@@ -67,24 +67,24 @@ class BarScale(ttk.Canvas):
         return self._value
 
     def set_value(self, value):
-        self._value = clamp(self._minval, self._maxval, value)
+        self._value = util.clamp(self._minval, self._maxval, value)
         self._bar_value = self._value_to_bar_position(self._value)
         self._update_value_view()
 
     def _value_to_bar_position(self, value):
         if self._scale_type == self.CURVE:
             y = value / (self._maxval - self._minval)
-            bar_value = inverse_quadratic_bezier(*_power_points, clamp(0, 1, y))
+            bar_value = util.inverse_quadratic_bezier(*_power_points, util.clamp(0, 1, y))
         else:
             bar_value = value / (self._maxval - self._minval)
-        return clamp(0, 1, bar_value)
+        return util.clamp(0, 1, bar_value)
 
     def _bar_position_to_value(self, bar_value):
         if self._scale_type == self.CURVE:
-            value = (self._maxval - self._minval) * quadratic_bezier(*_power_points, clamp(0, 1, bar_value))
+            value = (self._maxval - self._minval) * util.quadratic_bezier(*_power_points, util.clamp(0, 1, bar_value))
         else:
             value = (self._maxval - self._minval) * bar_value
-        return clamp(self._minval, self._maxval, value)
+        return util.clamp(self._minval, self._maxval, value)
 
     def _update_value_view(self):
         h = self.winfo_height()
