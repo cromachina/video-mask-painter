@@ -15,6 +15,7 @@ class VideoExport(tk.Toplevel):
         super().__init__(master=master, *args, **kwargs)
         self._project = proj
         self.geometry('500x300')
+
         frame = ttk.Frame(self)
         label = ttk.Label(frame, text='Output file:')
         label.pack(side=ttkc.LEFT)
@@ -23,20 +24,25 @@ class VideoExport(tk.Toplevel):
         file_entry.pack(side=ttkc.LEFT, fill=ttkc.X, expand=True)
         file_select_button = ttk.Button(frame, text="Select", command=self._on_file_selected)
         file_select_button.pack(side=ttkc.LEFT)
+
         frame = ttk.Frame(self)
         label = ttk.Label(frame, text="Mosaic size (%):")
         label.pack(side=ttkc.LEFT)
         self._mosaic_percent_var = ttk.DoubleVar(value=1)
         mosaic_size_spinbox = ttk.Spinbox(frame, from_=0, to=100, textvariable=self._mosaic_percent_var)
         mosaic_size_spinbox.pack(side=ttkc.LEFT, fill=ttkc.X, expand=True)
+
         ttk.Button(self, text='Export Mosaic', command=asynctk.AsyncTkCallback(self._on_export_mosaic))
         ttk.Button(self, text='Export Mask', command=asynctk.AsyncTkCallback(self._on_export_mask))
+
         frame = ttk.Frame(self)
         label = ttk.Label(frame, text='Progress:')
         label.pack(side=ttkc.LEFT)
         self._progress_bar = ttk.Progressbar(frame)
         self._progress_bar.pack(side=ttkc.LEFT, fill=ttkc.X, expand=True)
+
         ttk.Button(self, text='Cancel Running Export', command=self._on_cancel_export)
+
         self._loop = asyncio.get_event_loop()
         self._thread_running = False
         self._thread = None
@@ -103,26 +109,25 @@ class VideoExport(tk.Toplevel):
             progress_callback(100 * (frame_index / frame_count))
         output.release()
 
-    async def _on_export_mosaic(self):
+    async def _thread_run(self, task):
         if self._thread_running:
             return
         self._thread_running = True
-        await asyncio.to_thread(
+        await task
+        self._thread_running = False
+
+    async def _on_export_mosaic(self):
+        await self._thread_run(asyncio.to_thread(
             self._export_mosaic,
             Path(self._output_file_var.get()),
             self._mosaic_percent_var.get(),
-            self._update_progress_threadsafe)
-        self._thread_running = False
+            self._update_progress_threadsafe))
 
     async def _on_export_mask(self):
-        if self._thread_running:
-            return
-        self._thread_running = True
-        await asyncio.to_thread(
+        await self._thread_run(asyncio.to_thread(
             self._export_mask,
             Path(self._output_file_var.get()),
-            self._update_progress_threadsafe)
-        self._thread_running = False
+            self._update_progress_threadsafe))
 
     def _on_cancel_export(self, *args):
         self._thread_running = False
