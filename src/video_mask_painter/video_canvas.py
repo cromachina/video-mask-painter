@@ -234,6 +234,7 @@ class VideoCanvas(tk.Frame):
         self.drawing_started_event()
         if self._mask_image_array is not None:
             self._mask_image_array = self._mask_image_array.copy()
+        self._on_draw_move(event)
 
     def _on_draw_stop(self, event:tk.Event):
         if not self._video:
