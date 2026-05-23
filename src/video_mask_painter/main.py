@@ -2,7 +2,6 @@ import asyncio
 from pathlib import Path
 import importlib.metadata
 
-import tkinter as tk
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 from ttkbootstrap.widgets import tooltip
@@ -165,6 +164,8 @@ class App(asynctk.AsyncTk):
         self.bind('<Control-S>', self.save_as_project)
         self.bind('<Control-z>', self.undo)
         self.bind('<z>', self.redo)
+        self.bind('<Control-Z', self.redo)
+        self.bind('<Control-y', self.redo)
 
     def update_view(self):
         if self.project:

@@ -55,26 +55,6 @@ def format_time(frames, fps):
     fps_digits = int(np.ceil(np.log10(fps + 1)))
     return f'{h:02d}:{m:02d}:{s:02d}:{f:0{fps_digits}d}'
 
-def scale(scale):
-    return np.array([
-        [scale, 0, 0],
-        [0, scale, 0],
-        [0, 0, 1],
-    ], np.float64)
-
-def translate(dx, dy):
-    return np.array([
-        [1, 0, dx],
-        [0, 1, dy],
-        [0, 0, 1],
-    ], np.float64)
-
-def multiply(*matrices):
-    result = np.identity(3, np.float64)
-    for m in reversed(matrices):
-        np.matmul(result, m, result)
-    return result
-
 def event_vec(event:tk.Event):
     return np.array((event.x, event.y))
 
@@ -104,25 +84,6 @@ def to_byte(value):
 @numba.njit
 def mul(a, b):
     return (a * b) >> 14
-
-@numba.njit
-def comp(a, b):
-    return mul(a, _rangemax - b)
-
-@numba.njit(parallel=True)
-def normal_blend(dst, src_alpha, src, opacity):
-    src = to_short_array(src)
-    opacity = to_short(opacity)
-    res = np.empty_like(dst)
-    for y in numba.prange(dst.shape[0]):
-        for x in range(dst.shape[1]):
-            As = to_short(src_alpha[y, x, 0])
-            As = mul(As, opacity)
-            for c in range(dst.shape[2]):
-                Cd = to_short(dst[y, x, c])
-                Cs = mul(src[c], As)
-                res[y, x, c] = to_byte(Cs + comp(Cd, As))
-    return res
 
 @numba.vectorize
 def lerp_ubyte(a, b, t):

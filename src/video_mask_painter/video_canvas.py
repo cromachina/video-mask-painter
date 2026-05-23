@@ -3,14 +3,13 @@ import time
 from pathlib import Path
 
 import tkinter as tk
-import ttkbootstrap as ttk
-import ttkbootstrap.constants as ttkc
 
 import numpy as np
 import cv2
 import sdl2, sdl2.ext
 from sdl2.ext.window import _check_video_init
 from sdl2.ext.err import raise_sdl_err
+import ctypes
 
 from .util import *
 
@@ -19,10 +18,43 @@ sdl2.ext.init()
 _scroll_zoom_levels = [2 ** (x / 4) for x in range(-28, 21)]
 _default_zoom_level = 28
 
+class StreamingTexture():
+    def __init__(self, renderer, size):
+        self._size = size
+        texture = sdl2.SDL_CreateTexture(renderer, sdl2.SDL_PIXELFORMAT_ARGB8888, sdl2.SDL_TEXTUREACCESS_STREAMING, int(size[0]), int(size[1]))
+        if not texture:
+            raise_sdl_err('Creating texture')
+        self._texture = texture.contents
+        sdl2.SDL_SetTextureScaleMode(self.get(), sdl2.SDL_ScaleModeBest)
+
+    def __del__(self):
+        sdl2.SDL_DestroyTexture(self._texture)
+
+    def get(self):
+        return self._texture
+
+    def write_with(self, func):
+        pixels = ctypes.c_void_p(0)
+        pitch = ctypes.c_int(0)
+        sdl2.SDL_LockTexture(self._texture, None, ctypes.pointer(pixels), ctypes.pointer(pitch))
+        dst = np.ctypeslib.as_array(ctypes.cast(pixels, ctypes.POINTER(ctypes.c_uint8)), tuple(swap(self._size)) + (4,))
+        func(dst)
+        sdl2.SDL_UnlockTexture(self._texture)
+
+    def copy_from(self, array:np.ndarray):
+        def f(dst):
+            if array.shape[2] == 1:
+                dst[:,:,:3] = 255
+                dst[:,:,3] = array.reshape(array.shape[:2])
+            else:
+                np.copyto(dst[:,:,:3], array)
+        self.write_with(f)
+
 class EmbeddedWindow(sdl2.ext.Window):
     def __init__(self, widget:tk.Widget):
         _check_video_init(__class__)
         self.window = None
+        self.renderer = None
         self._widget = widget
 
     def create(self):
@@ -30,17 +62,21 @@ class EmbeddedWindow(sdl2.ext.Window):
             return
         window = sdl2.SDL_CreateWindowFrom(self._widget.winfo_id())
         if not window:
-            raise_sdl_err(__name__)
+            raise_sdl_err('Creating window')
         self.window = window.contents
+        self.renderer = sdl2.ext.Renderer(self.window)
+
+    def create_texture(self, size):
+        return StreamingTexture(self.renderer.renderer, size)
 
 class VideoCanvas(tk.Frame):
     def __init__(self, master=None, initial_color=(0, 0, 0), initial_alpha=255, *args, **kwargs):
         super().__init__(master=master, *args, **kwargs)
         self._sdl_window = EmbeddedWindow(self)
-        self._sdl_surface = None
-        self.winfo_toplevel().update_hook += self._update_view
+        self._video_texture = None
+        self._mask_texture = None
+        self._brush_texture = None
         self._view_needs_update = False
-        self._update_composite = False
         self._video = None
         self._video_image_array = None
         self._mask_image_array = None
@@ -50,7 +86,6 @@ class VideoCanvas(tk.Frame):
         self._mask_alpha = initial_alpha
         self._drawing = False
         self._drawing_mode = True # False = erasing
-        self._render_buffer = np.empty((1,1,3), dtype=np.ubyte)
         self._frame_count = 0
         self._fps = 60
         self._mouse_inside = False
@@ -76,6 +111,7 @@ class VideoCanvas(tk.Frame):
         self.bind('<Control-Button-5>', self._on_zoom_out)
         self.bind('<Enter>', self._on_mouse_enter)
         self.bind('<Leave>', self._on_mouse_leave)
+        self.winfo_toplevel().update_hook += self._update_view
         self.frame_changing_event = Observable()
         self.drawing_started_event = Observable()
         self.drawing_finished_event = Observable()
@@ -99,43 +135,28 @@ class VideoCanvas(tk.Frame):
             return
         if not self._view_needs_update:
             return
+        self._view_needs_update = False
         zoom = self._get_zoom_factor()
         clear_color = (0x33, 0x33, 0x33)
-        self._view_needs_update = False
+        self._sdl_window.renderer.clear(sdl2.ext.Color(*clear_color))
         if self._video:
-            # TODO: Do this rendering on the GPU instead as this operation
-            # already maxes out a 12 core CPU
+            canvas_size = np.array((self.winfo_width(), self.winfo_height()))
+            image_size = swap(np.array(self._video_image_array.shape[:2]))
+            offset = (-image_size * 0.5 + self._view_position) * zoom + canvas_size * 0.5
+            size = image_size * zoom
+            rect = (*offset, *size)
+            self._sdl_window.renderer.blit(self._video_texture.get(), dstrect=rect)
             if self._mask_image_array is not None:
-                mask = np.array(self._mask_color, dtype=np.uint8)
-                mask[0], mask[2] = mask[2], mask[0]
-                composite = normal_blend(
-                    self._video_image_array,
-                    self._mask_image_array,
-                    mask,
-                    np.uint8(self._mask_alpha))
-            else:
-                composite = self._video_image_array
-            canvas_h = self.winfo_height()
-            canvas_w = self.winfo_width()
-            image_size = np.array(self._video_image_array.shape[:2])
-            matrix = multiply(
-                translate(-image_size[1] * 0.5, -image_size[0] * 0.5),
-                translate(self._view_position[0], self._view_position[1]),
-                scale(zoom),
-                translate(canvas_w * 0.5, canvas_h * 0.5),
-            )
-            height, width = self._render_buffer.shape[:2]
-            cv2.warpAffine(composite, matrix[:2], dsize=(width, height), dst=self._render_buffer,
-                borderMode=cv2.BORDER_CONSTANT, borderValue=clear_color, flags=cv2.INTER_AREA)
-        else:
-            self._render_buffer[:,:] = clear_color
+                sdl2.SDL_SetTextureBlendMode(self._mask_texture.get(), sdl2.SDL_BLENDMODE_BLEND)
+                sdl2.SDL_SetTextureColorMod(self._mask_texture.get(), *self._mask_color)
+                sdl2.SDL_SetTextureAlphaMod(self._mask_texture.get(), self._mask_alpha)
+                self._sdl_window.renderer.blit(self._mask_texture.get(), dstrect=rect)
         if self._cursor_visible:
-            cv2.circle(
-                self._render_buffer, center=tuple(np.int64(self._mouse_pos)), radius=int(self._brush_size * zoom / 2),
-                color=0, thickness=1, lineType=cv2.LINE_AA)
-        sdl_array = sdl2.ext.pixels3d(self._sdl_surface, False)
-        sdl_array[:,:,:] = cv2.cvtColor(self._render_buffer, cv2.COLOR_RGB2RGBA)
-        self._sdl_window.refresh()
+            size = np.array(self._brush_texture._size)
+            offset = size / 2
+            cursor_rect = (*(self._mouse_pos - (size / 2)), *size)
+            self._sdl_window.renderer.blit(self._brush_texture.get(), dstrect=cursor_rect)
+        self._sdl_window.renderer.present()
 
     def update_view(self, *args):
         self._view_needs_update = True
@@ -143,11 +164,13 @@ class VideoCanvas(tk.Frame):
     def _on_resize(self, event:tk.Event):
         h = self.winfo_height()
         w = self.winfo_width()
-        self._render_buffer = np.empty((h, w, 3), dtype=np.ubyte)
-        self._mask_render_buffer = np.empty((h, w, 3), dtype=np.ubyte)
-        self._sdl_window.create()
+        if not self._sdl_window.window:
+            self._sdl_window.create()
+            self._video_texture = self._sdl_window.create_texture((1, 1))
+            self._mask_texture = self._sdl_window.create_texture((1, 1))
+            self._regenerate_brush_texture()
         self._sdl_window.size = (w, h)
-        self._sdl_surface = self._sdl_window.get_surface()
+        self._sdl_window.renderer.logical_size = self._sdl_window.size
         self.update_view()
 
     ###########################################################################
@@ -162,6 +185,7 @@ class VideoCanvas(tk.Frame):
     def _zoom(self, level_delta:int, event:tk.Event):
         self._zoom_level += level_delta
         self._zoom_level = clamp(0, len(_scroll_zoom_levels) - 1, self._zoom_level)
+        self._regenerate_brush_texture()
         self.update_view()
 
     def _on_pan_start(self, event:tk.Event):
@@ -228,6 +252,7 @@ class VideoCanvas(tk.Frame):
         cv2.line(
             self._mask_image_array, self._last_drawing_pos.astype(np.int32),
             brush_pos.astype(np.int32), color, self._brush_size, cv2.LINE_AA)
+        self._mask_texture.copy_from(self._mask_image_array)
         self._last_drawing_pos = brush_pos
 
     def _on_mouse_move(self, event:tk.Event):
@@ -236,6 +261,8 @@ class VideoCanvas(tk.Frame):
             self._on_pan_move(event)
         elif self._drawing and self._mask_image_array is not None:
             self._on_draw_move(event)
+            self.update_view()
+            self._update_view()
         self.update_view()
         self._last_mouse_pos = event_vec(event)
 
@@ -266,6 +293,9 @@ class VideoCanvas(tk.Frame):
 
     def set_mask_image_array(self, array):
         self._mask_image_array = array
+        if self._mask_image_array is not None:
+            self._mask_texture.copy_from(self._mask_image_array)
+        self.update_view()
 
     def get_mask_image_array(self) -> np.ndarray | None:
         return self._mask_image_array
@@ -277,9 +307,28 @@ class VideoCanvas(tk.Frame):
             data.flags.writeable = False
             return data
 
+    def _regenerate_brush_texture(self):
+        size = max(2, int(self._brush_size * self._get_zoom_factor()))
+        tex_size = size + 4
+        radius = size // 2
+        tex_center = tex_size // 2
+        tex_center = (tex_center, tex_center)
+        self._brush_texture = self._sdl_window.create_texture((tex_size, tex_size))
+        sdl2.SDL_SetTextureBlendMode(self._brush_texture.get(), sdl2.SDL_BLENDMODE_BLEND)
+        sdl2.SDL_SetTextureColorMod(self._brush_texture.get(), 0, 0, 0)
+        array = np.zeros((tex_size, tex_size, 1), dtype=np.ubyte)
+        cv2.circle(
+            array, center=tex_center, radius=radius,
+            color=0xff, thickness=1, lineType=cv2.LINE_AA)
+        cv2.circle(
+            array, center=tex_center, radius=1,
+            color=0xff, thickness=1, lineType=cv2.LINE_AA)
+        self._brush_texture.copy_from(array)
+
     def set_brush_size(self, size:int):
         self._brush_size = size
         self._mouse_pos = self.winfo_width() / 2, self.winfo_height() / 2
+        self._regenerate_brush_texture()
         self.show_cursor()
 
     def set_mask_color(self, color):
@@ -311,6 +360,7 @@ class VideoCanvas(tk.Frame):
         ret, self._video_image_array = self._video.read(self._video_image_array)
         if not ret:
             return False
+        self._video_texture.copy_from(self._video_image_array)
         self.frame_changing_event(self.get_frame_pos())
         self.update_view()
         return True
@@ -329,6 +379,8 @@ class VideoCanvas(tk.Frame):
         self._video = cv2.VideoCapture(str(file_path))
         self._frame_count = int(self._video.get(cv2.CAP_PROP_FRAME_COUNT))
         self._fps = int(self._video.get(cv2.CAP_PROP_FPS))
+        self._video_texture = self._sdl_window.create_texture(swap(self.get_video_size()))
+        self._mask_texture = self._sdl_window.create_texture(swap(self.get_video_size()))
         self.next_frame()
         self.reset_view()
 
@@ -363,7 +415,7 @@ class VideoCanvas(tk.Frame):
     def get_video_size(self) -> tuple[int, int]:
         if not self._video:
             return (0, 0)
-        return self._video_image_array.shape[:2]
+        return int(self._video.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(self._video.get(cv2.CAP_PROP_FRAME_WIDTH))
 
     def get_time_string(self) -> str:
         curr_time = format_time(self.get_frame_pos(), self.get_fps())
