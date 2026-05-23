@@ -6,7 +6,6 @@ import tkinter as tk
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 from ttkbootstrap.widgets import tooltip
-from ttkbootstrap_icons_bs import BootstrapIcon
 from tkinter import filedialog
 from ttkbootstrap import dialogs
 
@@ -16,23 +15,26 @@ __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
 
 def make_button(master, name, icon_name, command):
-    icon = BootstrapIcon(icon_name, size=20, color='#ffffff', style='outline')
+    icon = util.get_icon_image(icon_name, size=20, color='#ffffff')
     button = ttk.Button(master, image=icon, command=command, bootstyle='outline')
     button.pack(side=ttkc.LEFT)
+    button.__icon = icon
     tooltip.ToolTip(button, text=name)
     return button
 
-def make_checkbutton(master, name, icon_name):
-    icon = BootstrapIcon(icon_name, size=22, color='#ffffff', style='outline')
-    button = ttk.Checkbutton(master, image=icon, bootstyle='outline-toolbutton')
+def make_checkbutton(master, name, icon_name, variable):
+    icon = util.get_icon_image(icon_name, size=22, color='#ffffff')
+    button = ttk.Checkbutton(master, image=icon, variable=variable, bootstyle='outline-toolbutton')
     button.pack(side=ttkc.LEFT)
+    button.__icon = icon
     tooltip.ToolTip(button, text=name)
     return button
 
 def make_radiobutton(master, name, icon_name, value, variable):
-    icon = BootstrapIcon(icon_name, size=22, color='#ffffff', style='outline')
+    icon = util.get_icon_image(icon_name, size=22, color='#ffffff')
     button = ttk.Radiobutton(master, image=icon, value=value, variable=variable, bootstyle='outline-toolbutton')
     button.pack(side=ttkc.LEFT)
+    button.__icon = icon
     tooltip.ToolTip(button, text=name)
     return button
 
@@ -73,27 +75,28 @@ class App(asynctk.AsyncTk):
         # Project Buttons
         button_frame = ttk.Frame(self)
         button_frame.pack()
-        make_button(button_frame, 'Undo', 'arrow-90deg-left', self.undo)
-        make_button(button_frame, 'Redo', 'arrow-90deg-right', self.redo)
+        make_button(button_frame, 'Undo', 'undo', self.undo)
+        make_button(button_frame, 'Redo', 'redo', self.redo)
 
         make_separator(button_frame)
 
         # Video playback buttons
-        make_button(button_frame, 'Play video', 'play', self.play_video)
-        make_button(button_frame, 'Pause video', 'pause', self.pause_video)
-        make_button(button_frame, 'Previous frame', 'arrow-left-short', self.previous_frame)
-        make_button(button_frame, 'Next frame', 'arrow-right-short', self.next_frame)
-        self.loop_button = make_checkbutton(button_frame, 'Toggle loop video', 'repeat')
-        make_button(button_frame, 'Reset view', 'arrows-fullscreen', self.reset_view)
+        make_button(button_frame, 'Play/Pause video', 'play-pause', self.play_pause_video)
+        make_button(button_frame, 'Previous frame', 'left', self.previous_frame)
+        make_button(button_frame, 'Next frame', 'right', self.next_frame)
+        self.repeat_var = ttk.BooleanVar(value=False)
+        self.repeat_var.trace_add('write', self.toggle_repeat)
+        make_checkbutton(button_frame, 'Toggle loop video', 'repeat', self.repeat_var)
+        make_button(button_frame, 'Reset view', 'fullscreen', self.reset_view)
 
         make_separator(button_frame)
 
         # Keyframe Buttons
-        make_button(button_frame, 'Previous keyframe', 'arrow-left-square', self.previous_keyframe)
-        make_button(button_frame, 'Next keyframe', 'arrow-right-square', self.next_keyframe)
-        make_button(button_frame, 'Add blank keyframe', 'square', self.add_blank_keyframe)
-        make_button(button_frame, 'Clone keyframe', 'copy', self.clone_keyframe)
-        make_button(button_frame, 'Delete keyframe', 'x-square', self.delete_keyframe)
+        make_button(button_frame, 'Previous keyframe', 'keyframe-left', self.previous_keyframe)
+        make_button(button_frame, 'Next keyframe', 'keyframe-right', self.next_keyframe)
+        make_button(button_frame, 'Add blank keyframe', 'keyframe-blank', self.add_blank_keyframe)
+        make_button(button_frame, 'Clone keyframe', 'keyframe-clone', self.clone_keyframe)
+        make_button(button_frame, 'Delete keyframe', 'keyframe-delete', self.delete_keyframe)
 
         make_separator(button_frame)
 
@@ -104,9 +107,9 @@ class App(asynctk.AsyncTk):
         self.auto_keyframe_blank = 'blank'
         self.auto_keyframe_clone = 'clone'
         self.auto_keyframe_var = ttk.StringVar(value=self.auto_keyframe_off)
-        make_radiobutton(radio_frame, 'Toggle auto-keyframe off', 'window-x', self.auto_keyframe_off, self.auto_keyframe_var)
-        make_radiobutton(radio_frame, 'Toggle auto-keyframe blank', 'window', self.auto_keyframe_blank, self.auto_keyframe_var)
-        make_radiobutton(radio_frame, 'Toggle auto-keyframe clone', 'window-stack', self.auto_keyframe_clone, self.auto_keyframe_var)
+        make_radiobutton(radio_frame, 'Toggle auto-keyframe off', 'auto-keyframe-off', self.auto_keyframe_off, self.auto_keyframe_var)
+        make_radiobutton(radio_frame, 'Toggle auto-keyframe blank', 'auto-keyframe-blank', self.auto_keyframe_blank, self.auto_keyframe_var)
+        make_radiobutton(radio_frame, 'Toggle auto-keyframe clone', 'auto-keyframe-clone', self.auto_keyframe_clone, self.auto_keyframe_var)
 
         make_separator(button_frame)
 
@@ -116,8 +119,8 @@ class App(asynctk.AsyncTk):
         self.drawing_mode_draw = 'draw'
         self.drawing_mode_erase = 'erase'
         self.drawing_mode_var = ttk.StringVar(value=self.drawing_mode_draw)
-        make_radiobutton(radio_frame, 'Toggle draw', 'pencil', self.drawing_mode_draw, self.drawing_mode_var)
-        make_radiobutton(radio_frame, 'Toggle erase', 'eraser', self.drawing_mode_erase, self.drawing_mode_var)
+        make_radiobutton(radio_frame, 'Toggle draw', 'draw', self.drawing_mode_draw, self.drawing_mode_var)
+        make_radiobutton(radio_frame, 'Toggle erase', 'erase', self.drawing_mode_erase, self.drawing_mode_var)
         self.drawing_mode_var.trace_add('write', self.on_drawing_mode_changed)
 
         # Brush size selector
@@ -397,17 +400,20 @@ class App(asynctk.AsyncTk):
                 self.project.append(state, self.undo_limit)
             self.update_view()
 
-    def play_video(self):
-        self.video_canvas.play()
-
-    def pause_video(self):
-        self.video_canvas.pause()
+    def play_pause_video(self):
+        if self.video_canvas.is_playing():
+            self.video_canvas.pause()
+        else:
+            self.video_canvas.play()
 
     def previous_frame(self, *args):
         self.video_canvas.previous_frame()
 
     def next_frame(self, *args):
         self.video_canvas.next_frame()
+
+    def toggle_repeat(self, *args):
+        self.repeat_var.get()
 
     def reset_view(self):
         self.video_canvas.reset_view()

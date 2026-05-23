@@ -55,6 +55,7 @@ class VideoCanvas(tk.Frame):
         self._fps = 60
         self._mouse_inside = False
         self._playing = False
+        self._repeat = False
         self._mouse_pos = (0, 0)
         self._last_mouse_pos = np.array((0.0, 0.0))
         self._panning_view = False
@@ -300,17 +301,19 @@ class VideoCanvas(tk.Frame):
             if self._playing:
                 t = time.time()
                 if t >= next_deadline:
-                    self._read_frame()
+                    if not self._read_frame():
+                        self.set_frame_pos(1)
                     next_deadline = t + frame_time
 
     def _read_frame(self):
         if not self._video:
-            return
+            return False
         ret, self._video_image_array = self._video.read(self._video_image_array)
         if not ret:
-            return
+            return False
         self.frame_changing_event(self.get_frame_pos())
         self.update_view()
+        return True
 
     def _on_mousewheel(self, event:tk.Event):
         if event.delta > 0:
@@ -372,6 +375,9 @@ class VideoCanvas(tk.Frame):
 
     def pause(self):
         self._playing = False
+
+    def is_playing(self):
+        return self._playing
 
     def previous_frame(self):
         if not self._video:

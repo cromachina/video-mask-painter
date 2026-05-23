@@ -1,11 +1,15 @@
 import time
 import weakref
 import tkinter as tk
+import importlib.resources
 
 from pyrsistent import *
 import numpy as np
 import cv2
 import numba
+import cairosvg
+
+from . import icons
 
 @numba.vectorize
 def lerp(a, b, t):
@@ -143,6 +147,11 @@ def numpy_to_photoimage(array:np.ndarray):
     ppm_header = f'P6 {w} {h} 255 '.encode()
     data = ppm_header + array.tobytes()
     return tk.PhotoImage(width=w, height=h, data=data, format='PPM')
+
+def get_icon_image(name, size, color):
+    path = importlib.resources.files(icons).joinpath(f'{name}.svg')
+    data = cairosvg.svg2png(file_obj=open(path, 'rb'), output_width=size, output_height=size)
+    return tk.PhotoImage(width=size, height=size, data=data, format='png')
 
 def add_tag(widget:tk.Widget, tag):
     widget.bindtags((tag,) + widget.bindtags())
