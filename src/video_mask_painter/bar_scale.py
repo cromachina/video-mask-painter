@@ -51,6 +51,7 @@ class BarScale(ttk.Canvas):
         self._precise_dragging = False
         self._scale_type = scale_type
         self.value_updated_event = Observable()
+        self.update_stopped_event = Observable()
         self.bind('<Configure>', self._on_resize)
         self.bind('<Button-1>', self._on_drag_start)
         self.bind('<ButtonRelease-1>', self._on_drag_stop)
@@ -108,6 +109,7 @@ class BarScale(ttk.Canvas):
 
     def _on_drag_stop(self, event:tk.Event):
         self._dragging = False
+        self.update_stopped_event()
 
     def _on_precise_drag_start(self, event:tk.Event):
         self._last_x = event.x
@@ -115,6 +117,7 @@ class BarScale(ttk.Canvas):
 
     def _on_precise_drag_stop(self, event:tk.Event):
         self._precise_dragging = False
+        self.update_stopped_event()
 
     def _on_motion(self, event:tk.Entry):
         w = self.winfo_width()

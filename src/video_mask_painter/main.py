@@ -126,6 +126,7 @@ class App(asynctk.AsyncTk):
             scale_type=bar_scale.BarScale.CURVE, height=30, width=150)
         brush_scale.pack(side=ttkc.LEFT, padx=5)
         brush_scale.value_updated_event += self.on_brush_size_changed
+        brush_scale.update_stopped_event += self.video_canvas.hide_cursor
 
         # Mask tint selector
         self.color_picker = color_picker.ColorPickerHover(button_frame, initial_color, initial_alpha, height=30, width=40)

@@ -1,12 +1,15 @@
 import asyncio
 import tkinter as tk
 
+from . import util
+
 class AsyncTk(tk.Tk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.protocol('WM_DELETE_WINDOW', self.close_requested)
         self.running = False
         self.sleep_time = 1.0 / 60.0
+        self.update_hook = util.Observable()
 
     def close_requested(self):
         self.stop()
@@ -18,7 +21,9 @@ class AsyncTk(tk.Tk):
         self.running = True
         while self.running:
             self.update()
-            await asyncio.sleep(self.sleep_time)
+            self.update_idletasks()
+            self.update_hook()
+            await asyncio.sleep(0)
         self.destroy()
 
 class AsyncTkCallback:

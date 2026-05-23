@@ -14,7 +14,7 @@
       lib = pkgs.lib;
       python = pkgs.python313;
       pyPkgs = python.pkgs // rec {
-        ttkbootstrap-icons = pyPkgs.buildPythonPackage  {
+        ttkbootstrap-icons = pyPkgs.buildPythonPackage {
           pname = "ttkbootstrap-icons";
           version = "v4.0.0";
           src = pkgs.fetchurl {

@@ -17,8 +17,6 @@ def bilinear(a, b, c, t):
     bc = lerp(b, c, t)
     return lerp(ab, bc, t)
 
-epsilon = 0.00001
-
 def secant_method(f, x0=0, x1=1, iters=20):
     for _ in range(iters):
         f0 = f(x0)
@@ -79,24 +77,48 @@ def event_vec(event:tk.Event):
 def swap(vec):
     return np.array((vec[1], vec[0]))
 
-_rangemax = 0x3fff
+_rangemax = np.int16(0x3fff)
 
-@numba.vectorize
+@numba.njit
+def to_short_array(value):
+    value = value.astype(np.short)
+    return (value << 6) | (value >> 2)
+
+@numba.njit
+def to_byte_array(value):
+    return (value >> 6).astype(np.ubyte)
+
+@numba.njit
 def to_short(value):
     value = np.short(value)
     return (value << 6) | (value >> 2)
 
-@numba.vectorize
+@numba.njit
 def to_byte(value):
     return np.ubyte(value >> 6)
 
-@numba.vectorize
+@numba.njit
 def mul(a, b):
     return (a * b) >> 14
 
-@numba.vectorize
+@numba.njit
 def comp(a, b):
     return mul(a, _rangemax - b)
+
+@numba.njit(parallel=True)
+def normal_blend(dst, src_alpha, src, opacity):
+    src = to_short_array(src)
+    opacity = to_short(opacity)
+    res = np.empty_like(dst)
+    for y in numba.prange(dst.shape[0]):
+        for x in range(dst.shape[1]):
+            As = to_short(src_alpha[y, x, 0])
+            As = mul(As, opacity)
+            for c in range(dst.shape[2]):
+                Cd = to_short(dst[y, x, c])
+                Cs = mul(src[c], As)
+                res[y, x, c] = to_byte(Cs + comp(Cd, As))
+    return res
 
 @numba.vectorize
 def lerp_ubyte(a, b, t):
@@ -104,17 +126,6 @@ def lerp_ubyte(a, b, t):
     b = to_short(b)
     t = to_short(t)
     return to_byte(mul(b - a, t) + a)
-
-@numba.vectorize
-def normal_blend(dst, src, tint, alpha):
-    Cd = to_short(dst)
-    Cs = to_short(src)
-    tint = to_short(tint)
-    alpha = to_short(alpha)
-    As = mul(Cs, alpha)
-    Cs = mul(mul(Cs, As), tint)
-    res = Cs + comp(Cd, As)
-    return to_byte(res)
 
 def mosaic(image, mask, mosaic_percent, out=None):
     original_size = swap(image.shape[:2])
@@ -161,8 +172,8 @@ class timeit():
         self.start = time.time()
 
     def __exit__(self, exc_type, exc, tb):
-        t = int((time.time() - self.start) * 1000)
-        print(f'{self.name} {t}')
+        t = (time.time() - self.start) * 1000
+        print(f'{self.name} {t:.2f}')
 
 class Observable():
     def __init__(self):
