@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 import importlib.metadata
+import json
 
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
@@ -41,15 +42,26 @@ def make_separator(master):
     sep = ttk.Separator(master, orient=ttkc.VERTICAL)
     sep.pack(side=ttkc.LEFT, padx=5)
 
+def load_settings(file_name:str):
+    file_path = Path.home() / file_name
+    if not file_path.exists():
+        return {}
+
 class App(asynctk.AsyncTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title(f'{__package__} {__version__}')
-        self.geometry('{}x{}'.format(1200, 800))
         ttk.Style('darkly')
-        initial_color = (0, 0, 255)
-        initial_alpha = 127
-        initial_brush_size = 10
+
+        self.settings = util.Settings(f'.{__package__}')
+        self.win_geometry_var = self.settings.get('win_geometry', "1200x800")
+        self.mask_color_var = self.settings.get('mask_color', (0, 0, 255))
+        self.mask_alpha_var = self.settings.get('mask_alpha', 127)
+        self.brush_size_var = self.settings.get('brush_size', 10)
+        self.last_open_dir_var = self.settings.get('last_open_dir', '')
+        self.last_export_dir_var = self.settings.get('last_export_dir', '')
+
+        self.geometry(self.win_geometry_var.get())
 
         self.undo_limit = 100
         self.project = None
@@ -68,7 +80,7 @@ class App(asynctk.AsyncTk):
         menubar.add_command(label='Render Video', command=self.render_video)
 
         # Video and drawing area
-        self.video_canvas = video_canvas.VideoCanvas(self, initial_color, initial_alpha, width=1, height=1)
+        self.video_canvas = video_canvas.VideoCanvas(self, self.mask_alpha_var.get(), self.mask_alpha_var.get(), width=1, height=1)
         self.video_canvas.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
@@ -124,17 +136,20 @@ class App(asynctk.AsyncTk):
 
         # Brush size selector
         brush_scale = bar_scale.BarScale(
-            button_frame, label='Brush size', value=initial_brush_size, minval=1, maxval=1000,
+            button_frame, label='Brush size', value=self.brush_size_var.get(), minval=1, maxval=1000,
             scale_type=bar_scale.BarScale.CURVE, height=30, width=150)
         brush_scale.pack(side=ttkc.LEFT, padx=5)
-        brush_scale.value_updated_event += self.on_brush_size_changed
+        brush_scale.value_updated_event += self.video_canvas.set_brush_size
+        brush_scale.value_updated_event += lambda v: self.brush_size_var.set(int(v))
         brush_scale.update_stopped_event += self.video_canvas.hide_cursor
 
         # Mask tint selector
-        self.color_picker = color_picker.ColorPickerHover(button_frame, initial_color, initial_alpha, height=30, width=40)
+        self.color_picker = color_picker.ColorPickerHover(button_frame, self.mask_color_var.get(), self.mask_alpha_var.get(), height=30, width=40)
         self.color_picker.pack(side=ttkc.LEFT)
         self.color_picker.color_selected_event += self.video_canvas.set_mask_color
         self.color_picker.alpha_selected_event += self.video_canvas.set_mask_alpha
+        self.color_picker.color_selected_event += lambda v: self.mask_color_var.set(tuple(v))
+        self.color_picker.alpha_selected_event += self.mask_alpha_var.set
 
         button_frame = ttk.Frame(self)
         button_frame.pack()
@@ -166,6 +181,11 @@ class App(asynctk.AsyncTk):
         self.bind('<z>', self.redo)
         self.bind('<Control-Z>', self.redo)
         self.bind('<Control-y>', self.redo)
+        self.bind('<Destroy>', self.on_destroy)
+
+    def on_destroy(self, event):
+        self.win_geometry_var.set(self.winfo_geometry())
+        self.settings.save()
 
     def update_view(self):
         if self.project:
@@ -194,9 +214,6 @@ class App(asynctk.AsyncTk):
             self.video_canvas.set_drawing_mode()
         elif mode == self.drawing_mode_erase:
             self.video_canvas.set_erasing_mode()
-
-    def on_brush_size_changed(self, value):
-        self.video_canvas.set_brush_size(int(value))
 
     def on_drawing_started(self):
         if self.project:
@@ -252,9 +269,12 @@ class App(asynctk.AsyncTk):
         file_path = filedialog.askopenfilename(
             title='Open Video',
             filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
+            initialdir=self.last_open_dir_var.get(),
         )
         if file_path:
-            self.project = project.Project(project.ProjectState(), video_file_path=Path(file_path))
+            file_path = Path(file_path)
+            self.last_open_dir_var.set(str(file_path.parent))
+            self.project = project.Project(project.ProjectState(), video_file_path=file_path)
             self.load_video(self.project.video_file_path)
             self.add_blank_keyframe()
 
@@ -267,8 +287,11 @@ class App(asynctk.AsyncTk):
         file_path = filedialog.askopenfilename(
             title='Open Project',
             filetypes=project.project_file_types,
+            initialdir=self.last_open_dir_var.get(),
         )
         if file_path:
+            file_path = Path(file_path)
+            self.last_open_dir_var.set(str(file_path.parent))
             self.project = project.load_project(file_path)
             try:
                 self.load_video(self.project.video_file_path)
@@ -294,9 +317,11 @@ class App(asynctk.AsyncTk):
             file_path = filedialog.asksaveasfilename(
                 title='Save As',
                 filetypes=project.project_file_types,
+                initialdir=self.last_open_dir_var.get(),
             )
             if file_path:
                 file_path = Path(file_path)
+                self.last_open_dir_var.set(str(file_path.parent))
                 project.save_project(self.project, file_path)
                 self.project.set_saved()
                 self.project.project_file_path = file_path
@@ -308,9 +333,12 @@ class App(asynctk.AsyncTk):
             file_path = filedialog.askopenfilename(
                 title='Set Project Video',
                 filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
+                initialdir=self.last_open_dir_var.get(),
             )
             if file_path:
-                self.project.video_file_path = Path(file_path)
+                file_path = Path(file_path)
+                self.last_open_dir_var.set(str(file_path.parent))
+                self.project.video_file_path = file_path
                 self.project.set_dirty()
                 self.load_video(self.project.video_file_path)
         else:

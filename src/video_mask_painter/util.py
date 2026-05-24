@@ -2,6 +2,8 @@ import time
 import weakref
 import tkinter as tk
 import importlib.resources
+import json
+from pathlib import Path
 
 from pyrsistent import *
 import numpy as np
@@ -177,3 +179,48 @@ class Observable():
 
     def __call__(self, *args, **kwargs):
         self.call(*args, **kwargs)
+
+class Box():
+    def __init__(self, value=None):
+        self._value = value
+        self.value_changed = Observable()
+
+    def set(self, value):
+        self._value = value
+        self.value_changed(self._value)
+
+    def get(self):
+        return self._value
+
+def serialize_numpy_number(obj):
+    if  np.issubdtype(np.array(obj).dtype.type, np.integer):
+        return obj.item()
+    elif  np.issubdtype(np.array(obj).dtype.type, np.floating):
+        return obj.item()
+    else:
+        raise TypeError(obj)
+
+class Settings:
+    def __init__(self, file_name):
+        self._file_path = Path.home() / file_name
+        self._data = {}
+        self._vars = {}
+        if self._file_path.exists():
+            with self._file_path.open() as fp:
+                self._data = json.load(fp)
+                for item in self._data.items():
+                    self.get(*item)
+
+    def get(self, key, default) -> tk.Variable:
+        if key in self._vars:
+            return self._vars.get(key)
+        var = Box(default)
+        def save(value):
+            self._data[key] = var.get()
+        var.value_changed += save
+        self._vars[key] = var
+        return var
+
+    def save(self):
+        with self._file_path.open('w') as fp:
+            json.dump(self._data, fp, default=serialize_numpy_number)

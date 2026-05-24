@@ -327,7 +327,7 @@ class VideoCanvas(tk.Frame):
         self._brush_texture.copy_from(array)
 
     def set_brush_size(self, size:int):
-        self._brush_size = size
+        self._brush_size = int(size)
         self._mouse_pos = self.winfo_width() / 2, self.winfo_height() / 2
         self._regenerate_brush_texture()
         self.show_cursor()
