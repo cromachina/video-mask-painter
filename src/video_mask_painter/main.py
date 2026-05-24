@@ -442,7 +442,7 @@ class App(asynctk.AsyncTk):
         self.video_canvas.next_frame()
 
     def toggle_repeat(self, *args):
-        self.repeat_var.get()
+        self.video_canvas.set_repeat(self.repeat_var.get())
 
     def reset_view(self):
         self.video_canvas.reset_view()

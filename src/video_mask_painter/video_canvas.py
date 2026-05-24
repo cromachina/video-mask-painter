@@ -351,7 +351,7 @@ class VideoCanvas(tk.Frame):
             if self._playing:
                 t = time.time()
                 if t >= next_deadline:
-                    if not self._read_frame():
+                    if not self._read_frame() and self._repeat:
                         self.set_frame_pos(1)
                     next_deadline = t + frame_time
 
@@ -442,3 +442,6 @@ class VideoCanvas(tk.Frame):
         if not self._video:
             return
         self._read_frame()
+
+    def set_repeat(self, value:bool):
+        self._repeat = value
