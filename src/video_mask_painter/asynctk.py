@@ -22,7 +22,7 @@ class AsyncTk(tk.Tk):
         while self.running:
             self.update()
             self.update_idletasks()
-            self.update_hook()
+            self.update_hook.call_catch()
             await asyncio.sleep(0)
         self.destroy()
 

@@ -50,6 +50,9 @@ class StreamingTexture():
                 np.copyto(dst[:,:,:3], array)
         self.write_with(f)
 
+    def get_size(self):
+        return self._size
+
 class EmbeddedWindow(sdl2.ext.Window):
     def __init__(self, widget:tk.Widget):
         _check_video_init(__class__)
@@ -141,7 +144,7 @@ class VideoCanvas(tk.Frame):
         self._sdl_window.renderer.clear(sdl2.ext.Color(*clear_color))
         if self._video:
             canvas_size = np.array((self.winfo_width(), self.winfo_height()))
-            image_size = util.swap(np.array(self._video_image_array.shape[:2]))
+            image_size = util.swap(np.array(self._video_texture.get_size()))
             offset = (-image_size * 0.5 + self._view_position) * zoom + canvas_size * 0.5
             size = image_size * zoom
             rect = (*offset, *size)

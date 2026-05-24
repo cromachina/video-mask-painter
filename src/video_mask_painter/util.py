@@ -169,6 +169,18 @@ class Observable():
             if cb:
                 cb(*args, **kwargs)
 
+    def call_catch(self, *args, **kwargs):
+        for callback in self.callbacks:
+            if isinstance(callback, weakref.WeakMethod):
+                cb = callback()
+            else:
+                cb = callback
+            if cb:
+                try:
+                    cb(*args, **kwargs)
+                except Exception as ex:
+                    print(ex)
+
     def __iadd__(self, callback):
         self.add(callback)
         return self
