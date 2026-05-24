@@ -136,7 +136,7 @@ class Project(PClass):
         return self.set(saved_id=None)
 
 project_extension = '.vmp'
-project_file_types = (('VMP', f'*{project_extension};*{project_extension}~'), ('Any', '*.*'))
+project_file_types = (('VMP', f'*{project_extension}*'), ('Any', '*.*'))
 
 def save_project(project:Project, file_path:Path):
     with (tempfile.NamedTemporaryFile(dir=file_path.parent, prefix=file_path.name, delete=False, delete_on_close=False) as temp,
@@ -173,4 +173,4 @@ def load_project(file_path:Path) -> Project:
             state = state.insert_keyframe(Keyframe(index=index, data=data))
         return Project(
             video_file_path=metadata['video_file_path'],
-            project_file_path=file_path.with_suffix(project_extension)).update_current(ProjectState).set_saved()
+            project_file_path=file_path.with_suffix(project_extension)).update_current(state).set_saved()

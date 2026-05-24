@@ -286,7 +286,7 @@ class App(asynctk.AsyncTk):
     @staticmethod
     def saved_check(string):
         def wrapped(func):
-            def wrapped(self):
+            def wrapped(self, *args, **kwargs):
                 if self.project and not self.project.is_saved():
                     result = dialogs.Messagebox.yesnocancel(f'Save current project before {string}?', 'Save')
                     if result == 'No':
@@ -296,7 +296,7 @@ class App(asynctk.AsyncTk):
                             return
                     else:
                         return
-                func(self)
+                func(self, *args, **kwargs)
             return wrapped
         return wrapped
 
