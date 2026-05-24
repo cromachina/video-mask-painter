@@ -80,7 +80,7 @@ class App(asynctk.AsyncTk):
         menubar.add_command(label='Render Video', command=self.render_video)
 
         # Video and drawing area
-        self.video_canvas = video_canvas.VideoCanvas(self, self.mask_alpha_var.get(), self.mask_alpha_var.get(), width=1, height=1)
+        self.video_canvas = video_canvas.VideoCanvas(self, self.mask_color_var.get(), self.mask_alpha_var.get(), width=1, height=1)
         self.video_canvas.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
