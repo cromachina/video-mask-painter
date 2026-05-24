@@ -308,7 +308,6 @@ class VideoCanvas(tk.Frame):
         if self._video:
             size = self.get_video_size()
             data = np.full(size + (1,), fill_value=0x00, dtype=np.ubyte)
-            data.flags.writeable = False
             return data
 
     def _regenerate_brush_texture(self):

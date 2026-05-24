@@ -10,13 +10,26 @@ import cv2
 
 from . import util
 
+NoneType = type(None)
+
+def _lock_array(array:np.ndarray) -> np.ndarray:
+    array.flags.writeable = False
+    return array
+
+def _try_path(obj: Path | str | None):
+    try:
+        return Path(obj)
+    except:
+        return obj
+
 class Keyframe(PClass):
-    index = field(type=int)
-    data = field(type=np.ndarray)
+    index = field(type=int, initial=0)
+    data = field(type=np.ndarray, factory=_lock_array)
 
 class ProjectState(PClass):
     keyframes = pvector_field(Keyframe)
-    selected_index = field(initial=None)
+    selected_index = field([int, NoneType], initial=None)
+    id = field(int, initial=0)
 
     def print_keyframes(self):
         print('----------')
@@ -70,61 +83,60 @@ class ProjectState(PClass):
         return self.set(keyframes=self.keyframes.delete(ix))
 
     def update_keyframe(self, index, data):
-        data.flags.writeable = False
         keyframe = self.get_keyframe(index).set(data=data)
         return self.remove_keyframe(keyframe.index).insert_keyframe(keyframe)
 
-class Project():
-    def __init__(self, initial_state:ProjectState, video_file_path:Path, project_file_path:Path|None=None):
-        self.video_file_path = video_file_path
-        self.project_file_path = project_file_path
-        self._states = pvector()
-        self._current_index = 0
-        self._next_id = 0
-        self._saved_id = 0
-        self.append(initial_state)
+class Project(PClass):
+    video_file_path = field([Path, NoneType], factory=_try_path, initial=None)
+    project_file_path = field([Path, NoneType], factory=_try_path, initial=None)
+    states = pvector_field(ProjectState, initial=[ProjectState()])
+    current_index = field(int, initial=0)
+    next_id = field(int, initial=0)
+    saved_id = field([int, NoneType], initial=None)
 
     def get_current(self) -> ProjectState:
-        return self._states[self._current_index][1]
+        return self.states[self.current_index]
 
     def update_current(self, state:ProjectState):
-        self._states = self._states.set(self._current_index, (self.self._get_current_id(), state))
+        state = state.set(id=self._get_current_id())
+        return self.set(states=self.states.set(self.current_index, state))
 
     def _get_current_id(self):
-        return self._states[self._current_index][0]
+        return self.states[self.current_index].id
 
     def append(self, state:ProjectState, state_limit:int|None=None):
-        state = (self._next_id, state)
-        self._next_id += 1
-        self._states = self._states[:self._current_index + 1]
-        self._states = self._states.append(state)
-        if state_limit is not None and len(self._states) > state_limit:
-            delta = len(self._states) - state_limit
-            self._states = self._states[delta:]
-        self._current_index = len(self._states) - 1
+        state = state.set(id=self.next_id)
+        next_id = self.next_id + 1
+        states = self.states[:self.current_index + 1].append(state)
+        if state_limit is not None and len(states) > state_limit:
+            delta = len(states) - state_limit
+            states = states[delta:]
+        current_index = len(states) - 1
+        return self.set(next_id=next_id, states=states, current_index=current_index)
 
     def undo(self):
-        self._current_index = max(0, self._current_index - 1)
-        return self.get_current()
+        return self.set(current_index=max(0, self.current_index - 1))
 
     def redo(self):
-        self._current_index = min(self._current_index + 1, len(self._states) - 1)
-        return self.get_current()
+        return self.set(current_index=min(self.current_index + 1, len(self.states) - 1))
 
     def can_undo(self):
-        return self._current_index != 0
+        return self.current_index != 0
 
     def can_redo(self):
-        return self._current_index != (len(self._states) - 1)
+        return self.current_index != (len(self.states) - 1)
 
     def is_saved(self):
-        return self._saved_id == self._get_current_id()
+        return self.saved_id == self._get_current_id()
 
     def set_saved(self):
-        self._saved_id = self._get_current_id()
+        return self.set(saved_id=self._get_current_id())
 
     def set_dirty(self):
-        self._saved_id = None
+        return self.set(saved_id=None)
+
+project_extension = '.vmp'
+project_file_types = (('VMP', f'*{project_extension};*{project_extension}~'), ('Any', '*.*'))
 
 def save_project(project:Project, file_path:Path):
     with (tempfile.NamedTemporaryFile(dir=file_path.parent, prefix=file_path.name, delete=False, delete_on_close=False) as temp,
@@ -139,7 +151,6 @@ def save_project(project:Project, file_path:Path):
                 res, data = cv2.imencode('.png', keyframe.data)
                 zfile.writestr(f'frames/{keyframe.index}', data.tobytes())
             zfile.close()
-            Path(temp.name).rename(file_path)
         except Exception as ex:
             zfile.close()
             temp.close()
@@ -158,11 +169,7 @@ def load_project(file_path:Path) -> Project:
             data = zfile.read(sub_file)
             data = cv2.imdecode(np.frombuffer(data, dtype=np.ubyte), cv2.IMREAD_GRAYSCALE)
             data = data.reshape(data.shape + (1,))
-            data.flags.writeable = False
             state = state.insert_keyframe(Keyframe(index=index, data=data))
         return Project(
-            initial_state=state,
-            video_file_path=Path(metadata['video_file_path']),
-            project_file_path=Path(file_path))
-
-project_file_types = (('VMP', '*.vmp'), ('Any', '*.*'))
+            video_file_path=metadata['video_file_path'],
+            project_file_path=file_path.with_suffix(project_extension)).update_current(ProjectState).set_saved()

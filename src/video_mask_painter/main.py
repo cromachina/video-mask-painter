@@ -1,7 +1,8 @@
 import asyncio
 from pathlib import Path
 import importlib.metadata
-import json
+import tempfile
+import threading
 
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
@@ -73,6 +74,7 @@ class App(asynctk.AsyncTk):
         menubar.add_cascade(label='File', menu=file_menu)
         file_menu.add_command(label='Open Video as New Project', command=self.open_video)
         file_menu.add_command(label='Open Project', command=self.open_project)
+        file_menu.add_command(label='Open Project from Backup Directory', command=self.open_project_from_backup_dir)
         file_menu.add_command(label='Save Project', command=self.save_project)
         file_menu.add_command(label='Save As Project', command=self.save_as_project)
         file_menu.add_command(label='Set Project Video', command=self.set_project_video)
@@ -158,6 +160,8 @@ class App(asynctk.AsyncTk):
         self.time_label.pack(side=ttkc.LEFT)
         self.video_file_name_label = ttk.Label(button_frame)
         self.video_file_name_label.pack(side=ttkc.LEFT)
+        self.saved_label = ttk.Label(button_frame, width=2)
+        self.saved_label.pack(side=ttkc.LEFT)
 
         # Timeline and info
         self.timeline = timeline.Timeline(self, height=50)
@@ -183,9 +187,34 @@ class App(asynctk.AsyncTk):
         self.bind('<Control-y>', self.redo)
         self.bind('<Destroy>', self.on_destroy)
 
+        self.stopped_event = threading.Event()
+        self.auto_backup_task = asyncio.create_task(asyncio.to_thread(self.auto_backup))
+
+    def auto_backup(self):
+        while not self.stopped_event.wait(60):
+            proj = self.project
+            if proj and not proj.is_saved():
+                temp = Path(tempfile.gettempdir())
+                if proj.project_file_path is not None:
+                    file = proj.project_file_path.name
+                else:
+                    file = proj.video_file_path.with_suffix(project.project_extension + '~').name
+                file = temp / file
+                print(file)
+                project.save_project(proj, file)
+
     def on_destroy(self, event):
         self.win_geometry_var.set(self.winfo_geometry())
         self.settings.save()
+        self.stopped_event.set()
+        for task in [self.auto_backup_task]:
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    ex = task.exception()
+                    print(ex)
+                except:
+                    pass
 
     def update_view(self):
         if self.project:
@@ -198,6 +227,11 @@ class App(asynctk.AsyncTk):
             data = keyframe.data if keyframe else None
             self.video_canvas.set_mask_image_array(data)
             self.video_canvas.update_view()
+            self.update_saved_label()
+
+    def update_saved_label(self):
+        if self.project is not None:
+            self.saved_label.config(text='' if self.project.is_saved() else '*')
 
     def on_frame_changing(self, index):
         if self.project:
@@ -239,7 +273,8 @@ class App(asynctk.AsyncTk):
                 return
             index = self.video_canvas.get_frame_pos()
             state = self.project.get_current().update_keyframe(index, data).set(selected_index=index)
-            self.project.append(state, self.undo_limit)
+            self.project = self.project.append(state, self.undo_limit)
+            self.update_saved_label()
 
     def load_video(self, file_path:Path):
         self.video_canvas.open_video(file_path)
@@ -274,7 +309,8 @@ class App(asynctk.AsyncTk):
         if file_path:
             file_path = Path(file_path)
             self.last_open_dir_var.set(str(file_path.parent))
-            self.project = project.Project(project.ProjectState(), video_file_path=file_path)
+            self.project = project.Project(video_file_path=file_path).set_saved()
+            self.update_saved_label()
             self.load_video(self.project.video_file_path)
             self.add_blank_keyframe()
 
@@ -283,16 +319,17 @@ class App(asynctk.AsyncTk):
         super().close_requested()
 
     @saved_check('opening')
-    def open_project(self):
+    def open_project_from_dir(self, dir:Path):
         file_path = filedialog.askopenfilename(
             title='Open Project',
             filetypes=project.project_file_types,
-            initialdir=self.last_open_dir_var.get(),
+            initialdir=dir,
         )
         if file_path:
             file_path = Path(file_path)
             self.last_open_dir_var.set(str(file_path.parent))
             self.project = project.load_project(file_path)
+            self.update_saved_label()
             try:
                 self.load_video(self.project.video_file_path)
             except:
@@ -302,11 +339,18 @@ class App(asynctk.AsyncTk):
                 if result == 'Yes':
                     self.set_project_video()
 
+    def open_project(self):
+        self.open_project_from_dir(self.last_open_dir_var.get())
+
+    def open_project_from_backup_dir(self):
+        self.open_project_from_dir(tempfile.gettempdir())
+
     def save_project(self, *args):
         if self.project:
             if self.project.project_file_path:
                 project.save_project(self.project, self.project.project_file_path)
-                self.project.set_saved()
+                self.project = self.project.set_saved()
+                self.update_saved_label()
                 return True
             else:
                 return self.save_as_project()
@@ -323,8 +367,8 @@ class App(asynctk.AsyncTk):
                 file_path = Path(file_path)
                 self.last_open_dir_var.set(str(file_path.parent))
                 project.save_project(self.project, file_path)
-                self.project.set_saved()
-                self.project.project_file_path = file_path
+                self.project = self.project.set(project_file_path=file_path).set_saved()
+                self.update_saved_label()
                 return True
         return False
 
@@ -338,8 +382,8 @@ class App(asynctk.AsyncTk):
             if file_path:
                 file_path = Path(file_path)
                 self.last_open_dir_var.set(str(file_path.parent))
-                self.project.video_file_path = file_path
-                self.project.set_dirty()
+                self.project = self.project.set(video_file_path=file_path).set_dirty()
+                self.update_saved_label()
                 self.load_video(self.project.video_file_path)
         else:
             self.open_video()
@@ -358,18 +402,18 @@ class App(asynctk.AsyncTk):
     def update_to_selected(self):
         if self.project:
             state = self.project.get_current()
-            if state.selected_index:
+            if state.selected_index is not None:
                 self.video_canvas.set_frame_pos(state.selected_index)
 
     def undo(self, *args):
         if self.project:
-            self.project.undo()
+            self.project = self.project.undo()
             self.update_to_selected()
             self.update_view()
 
     def redo(self, *args):
         if self.project:
-            self.project.redo()
+            self.project = self.project.redo()
             self.update_to_selected()
             self.update_view()
 
@@ -401,7 +445,7 @@ class App(asynctk.AsyncTk):
             data = self.video_canvas.get_blank_image_array()
             keyframe = project.Keyframe(index=index, data=data)
             state = state.insert_keyframe(keyframe).set(selected_index=index)
-            self.project.append(state, self.undo_limit)
+            self.project = self.project.append(state, self.undo_limit)
             self.update_view()
 
     def clone_keyframe(self):
@@ -416,7 +460,7 @@ class App(asynctk.AsyncTk):
                 return
             keyframe = keyframe.set(index=index)
             state = state.insert_keyframe(keyframe).set(selected_index=index)
-            self.project.append(state, self.undo_limit)
+            self.project = self.project.append(state, self.undo_limit)
             self.update_view()
 
     def delete_keyframe(self):
@@ -426,7 +470,7 @@ class App(asynctk.AsyncTk):
             keyframe = state.get_keyframe(index)
             if keyframe:
                 state = state.remove_keyframe(index).set(selected_index=None)
-                self.project.append(state, self.undo_limit)
+                self.project = self.project.append(state, self.undo_limit)
             self.update_view()
 
     def play_pause_video(self):
