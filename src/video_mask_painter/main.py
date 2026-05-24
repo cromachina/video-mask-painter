@@ -200,7 +200,6 @@ class App(asynctk.AsyncTk):
                 else:
                     file = proj.video_file_path.with_suffix(project.project_extension + '~').name
                 file = temp / file
-                print(file)
                 project.save_project(proj, file)
 
     def on_destroy(self, event):
