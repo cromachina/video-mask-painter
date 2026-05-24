@@ -188,12 +188,13 @@ class App(asynctk.AsyncTk):
         self.bind('<Destroy>', self.on_destroy)
 
         self.stopped_event = threading.Event()
+        self.last_auto_saved_id = None
         self.auto_backup_task = asyncio.create_task(asyncio.to_thread(self.auto_backup))
 
     def auto_backup(self):
         while not self.stopped_event.wait(60):
             proj = self.project
-            if proj and not proj.is_saved():
+            if proj and not proj.is_saved() and self.last_auto_saved_id != proj.get_current_id():
                 temp = Path(tempfile.gettempdir())
                 if proj.project_file_path is not None:
                     file = proj.project_file_path.name
@@ -201,6 +202,7 @@ class App(asynctk.AsyncTk):
                     file = proj.video_file_path.with_suffix(project.project_extension + '~').name
                 file = temp / file
                 project.save_project(proj, file)
+                self.last_auto_saved_id = proj.get_current_id()
 
     def on_destroy(self, event):
         self.win_geometry_var.set(self.winfo_geometry())
@@ -309,6 +311,7 @@ class App(asynctk.AsyncTk):
             file_path = Path(file_path)
             self.last_open_dir_var.set(str(file_path.parent))
             self.project = project.Project(video_file_path=file_path).set_saved()
+            self.last_auto_saved_id = None
             self.update_saved_label()
             self.load_video(self.project.video_file_path)
             self.add_blank_keyframe()
@@ -328,6 +331,7 @@ class App(asynctk.AsyncTk):
             file_path = Path(file_path)
             self.last_open_dir_var.set(str(file_path.parent))
             self.project = project.load_project(file_path)
+            self.last_auto_saved_id = None
             self.update_saved_label()
             try:
                 self.load_video(self.project.video_file_path)

@@ -98,10 +98,10 @@ class Project(PClass):
         return self.states[self.current_index]
 
     def update_current(self, state:ProjectState):
-        state = state.set(id=self._get_current_id())
+        state = state.set(id=self.get_current_id())
         return self.set(states=self.states.set(self.current_index, state))
 
-    def _get_current_id(self):
+    def get_current_id(self):
         return self.states[self.current_index].id
 
     def append(self, state:ProjectState, state_limit:int|None=None):
@@ -127,10 +127,10 @@ class Project(PClass):
         return self.current_index != (len(self.states) - 1)
 
     def is_saved(self):
-        return self.saved_id == self._get_current_id()
+        return self.saved_id == self.get_current_id()
 
     def set_saved(self):
-        return self.set(saved_id=self._get_current_id())
+        return self.set(saved_id=self.get_current_id())
 
     def set_dirty(self):
         return self.set(saved_id=None)
@@ -151,6 +151,7 @@ def save_project(project:Project, file_path:Path):
                 res, data = cv2.imencode('.png', keyframe.data)
                 zfile.writestr(f'frames/{keyframe.index}', data.tobytes())
             zfile.close()
+            Path(temp.name).rename(file_path)
         except Exception as ex:
             zfile.close()
             temp.close()
