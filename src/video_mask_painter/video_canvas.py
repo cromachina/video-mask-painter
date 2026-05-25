@@ -224,19 +224,18 @@ class VideoCanvas(tk.Frame):
     ## Mask drawing
 
     def _on_draw_start(self, event:tk.Event):
-        if not self._video:
+        if not self._video or self._mask_image_array is None:
             return
         self.pause()
         self.show_cursor()
         self._drawing = True
         self._last_drawing_pos = self._mouse_to_view(util.event_vec(event))
         self.drawing_started_event()
-        if self._mask_image_array is not None:
-            self._mask_image_array = self._mask_image_array.copy()
+        self._mask_image_array = self._mask_image_array.copy()
         self._on_draw_move(event)
 
     def _on_draw_stop(self, event:tk.Event):
-        if not self._video:
+        if not self._video or self._mask_image_array is None:
             return
         self._drawing = False
         if not self._mouse_inside:
@@ -244,7 +243,7 @@ class VideoCanvas(tk.Frame):
         self.drawing_finished_event()
 
     def _on_draw_move(self, event:tk.Event):
-        if not self._video:
+        if not self._video or self._mask_image_array is None:
             return
         current_pos = util.event_vec(event)
         brush_pos = self._mouse_to_view(current_pos)
