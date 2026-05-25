@@ -73,17 +73,19 @@ class VideoExport(tk.Toplevel):
         frame_count = input.get(cv2.CAP_PROP_FRAME_COUNT)
         size = int(input.get(cv2.CAP_PROP_FRAME_WIDTH)), int(input.get(cv2.CAP_PROP_FRAME_HEIGHT))
         output = cv2.VideoWriter(str(output_path.with_suffix('.mp4')), cv2.VideoWriter.fourcc(*'avc1'), fps, size)
-        data = None
+        frame_data = None
         buffer = None
         while self._thread_running:
-            res, data = input.read(data)
+            res, frame_data = input.read(frame_data)
             if not res:
                 break
             frame_index = input.get(cv2.CAP_PROP_POS_FRAMES)
             keyframe = state.get_keyframe(frame_index)
-            mask = keyframe.data
-            buffer = util.mosaic(data, mask, mosaic_percent, buffer)
-            output.write(buffer)
+            if keyframe is None:
+                output.write(frame_data)
+            else:
+                buffer = util.mosaic(frame_data, keyframe.data, mosaic_percent, buffer)
+                output.write(buffer)
             progress_callback(100 * (frame_index / frame_count))
         input.release()
         output.release()
@@ -98,36 +100,41 @@ class VideoExport(tk.Toplevel):
         input.release()
         output = cv2.VideoWriter(str(output_path.with_suffix('.mp4')), cv2.VideoWriter.fourcc(*'avc1'), fps, size)
         frame_index = 0
+        blank = np.full(size + (3,), 0, dtype=np.ubyte)
+        mask_data = blank
         last_keyframe = None
         while self._thread_running and frame_index < frame_count:
             frame_index += 1
             keyframe = state.get_keyframe(frame_index)
-            if keyframe is not last_keyframe:
-                data = keyframe.data.repeat(3, axis=2)
+            if keyframe is None:
+                next_mask = blank
+            elif keyframe is not last_keyframe:
+                next_mask = keyframe.data.repeat(3, axis=2)
+            mask_data = next_mask
             last_keyframe = keyframe
-            output.write(data)
+            output.write(mask_data)
             progress_callback(100 * (frame_index / frame_count))
         output.release()
 
-    async def _thread_run(self, task):
+    async def _thread_run(self, *args):
         if self._thread_running:
             return
         self._thread_running = True
-        await task
+        await asyncio.to_thread(*args)
         self._thread_running = False
 
     async def _on_export_mosaic(self):
-        await self._thread_run(asyncio.to_thread(
+        await self._thread_run(
             self._export_mosaic,
             Path(self._output_file_var.get()),
             self._mosaic_percent_var.get(),
-            self._update_progress_threadsafe))
+            self._update_progress_threadsafe)
 
     async def _on_export_mask(self):
-        await self._thread_run(asyncio.to_thread(
+        await self._thread_run(
             self._export_mask,
             Path(self._output_file_var.get()),
-            self._update_progress_threadsafe))
+            self._update_progress_threadsafe)
 
     def _on_cancel_export(self, *args):
         self._thread_running = False

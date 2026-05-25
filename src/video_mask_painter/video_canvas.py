@@ -120,10 +120,6 @@ class VideoCanvas(tk.Frame):
         self.drawing_finished_event = util.Observable()
         self.config(cursor='none')
 
-    def _update_hook(self, *args):
-        if self._sdl_window.window:
-            self._sdl_window.refresh()
-
     def _on_destroy(self, event:tk.Event):
         self._task.cancel()
 
