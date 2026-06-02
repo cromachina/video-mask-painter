@@ -23,6 +23,7 @@ dependencies = [
     'opencv-python',
     'ttkbootstrap',
     'pyrsistent',
+    'moderngl',
 ]
 
 [project.optional-dependencies]

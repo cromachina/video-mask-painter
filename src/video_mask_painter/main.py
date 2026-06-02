@@ -6,7 +6,6 @@ import threading
 
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
-from ttkbootstrap.widgets import tooltip
 from tkinter import filedialog
 from ttkbootstrap import dialogs
 
@@ -14,30 +13,6 @@ from . import asynctk, util, video_canvas, project, timeline, bar_scale, color_p
 
 __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
-
-def make_button(master, name, icon_name, command):
-    icon = util.get_icon_image(icon_name, size=20, color='#ffffff')
-    button = ttk.Button(master, image=icon, command=command, bootstyle='outline')
-    button.pack(side=ttkc.LEFT)
-    button.__icon = icon
-    tooltip.ToolTip(button, text=name)
-    return button
-
-def make_checkbutton(master, name, icon_name, variable):
-    icon = util.get_icon_image(icon_name, size=22, color='#ffffff')
-    button = ttk.Checkbutton(master, image=icon, variable=variable, bootstyle='outline-toolbutton')
-    button.pack(side=ttkc.LEFT)
-    button.__icon = icon
-    tooltip.ToolTip(button, text=name)
-    return button
-
-def make_radiobutton(master, name, icon_name, value, variable):
-    icon = util.get_icon_image(icon_name, size=22, color='#ffffff')
-    button = ttk.Radiobutton(master, image=icon, value=value, variable=variable, bootstyle='outline-toolbutton')
-    button.pack(side=ttkc.LEFT)
-    button.__icon = icon
-    tooltip.ToolTip(button, text=name)
-    return button
 
 def make_separator(master):
     sep = ttk.Separator(master, orient=ttkc.VERTICAL)
@@ -60,7 +35,7 @@ class App(asynctk.AsyncTk):
         self.mask_alpha_var = self.settings.get('mask_alpha', 127)
         self.brush_size_var = self.settings.get('brush_size', 10)
         self.last_open_dir_var = self.settings.get('last_open_dir', '')
-        self.last_export_dir_var = self.settings.get('last_export_dir', '')
+        self.last_export_file_var = self.settings.get('last_export_file', '')
 
         self.geometry(self.win_geometry_var.get())
 
@@ -81,35 +56,38 @@ class App(asynctk.AsyncTk):
         file_menu.add_command(label='Exit', command=self.close_requested)
         menubar.add_command(label='Render Video', command=self.render_video)
 
+        self.base_frame = ttk.Frame(self)
+        self.base_frame.place(relwidth=1, relheight=1)
+
         # Video and drawing area
-        self.video_canvas = video_canvas.VideoCanvas(self, self.mask_color_var.get(), self.mask_alpha_var.get(), width=1, height=1)
+        self.video_canvas = video_canvas.VideoCanvas(self.base_frame, self.mask_color_var.get(), self.mask_alpha_var.get(), width=1, height=1)
         self.video_canvas.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
-        button_frame = ttk.Frame(self)
+        button_frame = ttk.Frame(self.base_frame)
         button_frame.pack()
-        make_button(button_frame, 'Undo', 'undo', self.undo)
-        make_button(button_frame, 'Redo', 'redo', self.redo)
+        util.make_button(button_frame, 'Undo', 'undo', self.undo)
+        util.make_button(button_frame, 'Redo', 'redo', self.redo)
 
         make_separator(button_frame)
 
         # Video playback buttons
-        make_button(button_frame, 'Play/Pause video', 'play-pause', self.play_pause_video)
-        make_button(button_frame, 'Previous frame', 'left', self.previous_frame)
-        make_button(button_frame, 'Next frame', 'right', self.next_frame)
+        util.make_button(button_frame, 'Play/Pause video', 'play-pause', self.play_pause_video)
+        util.make_button(button_frame, 'Previous frame', 'left', self.previous_frame)
+        util.make_button(button_frame, 'Next frame', 'right', self.next_frame)
         self.repeat_var = ttk.BooleanVar(value=False)
         self.repeat_var.trace_add('write', self.toggle_repeat)
-        make_checkbutton(button_frame, 'Toggle loop video', 'repeat', self.repeat_var)
-        make_button(button_frame, 'Reset view', 'fullscreen', self.reset_view)
+        util.make_checkbutton(button_frame, 'Toggle loop video', 'repeat', self.repeat_var)
+        util.make_button(button_frame, 'Reset view', 'fullscreen', self.reset_view)
 
         make_separator(button_frame)
 
         # Keyframe Buttons
-        make_button(button_frame, 'Previous keyframe', 'keyframe-left', self.previous_keyframe)
-        make_button(button_frame, 'Next keyframe', 'keyframe-right', self.next_keyframe)
-        make_button(button_frame, 'Add blank keyframe', 'keyframe-blank', self.add_blank_keyframe)
-        make_button(button_frame, 'Clone keyframe', 'keyframe-clone', self.clone_keyframe)
-        make_button(button_frame, 'Delete keyframe', 'keyframe-delete', self.delete_keyframe)
+        util.make_button(button_frame, 'Previous keyframe', 'keyframe-left', self.previous_keyframe)
+        util.make_button(button_frame, 'Next keyframe', 'keyframe-right', self.next_keyframe)
+        util.make_button(button_frame, 'Add blank keyframe', 'keyframe-blank', self.add_blank_keyframe)
+        util.make_button(button_frame, 'Clone keyframe', 'keyframe-clone', self.clone_keyframe)
+        util.make_button(button_frame, 'Delete keyframe', 'keyframe-delete', self.delete_keyframe)
 
         make_separator(button_frame)
 
@@ -120,9 +98,9 @@ class App(asynctk.AsyncTk):
         self.auto_keyframe_blank = 'blank'
         self.auto_keyframe_clone = 'clone'
         self.auto_keyframe_var = ttk.StringVar(value=self.auto_keyframe_off)
-        make_radiobutton(radio_frame, 'Toggle auto-keyframe off', 'auto-keyframe-off', self.auto_keyframe_off, self.auto_keyframe_var)
-        make_radiobutton(radio_frame, 'Toggle auto-keyframe blank', 'auto-keyframe-blank', self.auto_keyframe_blank, self.auto_keyframe_var)
-        make_radiobutton(radio_frame, 'Toggle auto-keyframe clone', 'auto-keyframe-clone', self.auto_keyframe_clone, self.auto_keyframe_var)
+        util.make_radiobutton(radio_frame, 'Toggle auto-keyframe off', 'auto-keyframe-off', self.auto_keyframe_off, self.auto_keyframe_var)
+        util.make_radiobutton(radio_frame, 'Toggle auto-keyframe blank', 'auto-keyframe-blank', self.auto_keyframe_blank, self.auto_keyframe_var)
+        util.make_radiobutton(radio_frame, 'Toggle auto-keyframe clone', 'auto-keyframe-clone', self.auto_keyframe_clone, self.auto_keyframe_var)
 
         make_separator(button_frame)
 
@@ -132,8 +110,8 @@ class App(asynctk.AsyncTk):
         self.drawing_mode_draw = 'draw'
         self.drawing_mode_erase = 'erase'
         self.drawing_mode_var = ttk.StringVar(value=self.drawing_mode_draw)
-        make_radiobutton(radio_frame, 'Toggle draw', 'draw', self.drawing_mode_draw, self.drawing_mode_var)
-        make_radiobutton(radio_frame, 'Toggle erase', 'erase', self.drawing_mode_erase, self.drawing_mode_var)
+        util.make_radiobutton(radio_frame, 'Toggle draw', 'draw', self.drawing_mode_draw, self.drawing_mode_var)
+        util.make_radiobutton(radio_frame, 'Toggle erase', 'erase', self.drawing_mode_erase, self.drawing_mode_var)
         self.drawing_mode_var.trace_add('write', self.on_drawing_mode_changed)
 
         # Brush size selector
@@ -153,7 +131,7 @@ class App(asynctk.AsyncTk):
         self.color_picker.color_selected_event += lambda v: self.mask_color_var.set(tuple(v))
         self.color_picker.alpha_selected_event += self.mask_alpha_var.set
 
-        button_frame = ttk.Frame(self)
+        button_frame = ttk.Frame(self.base_frame)
         button_frame.pack()
 
         self.time_label = ttk.Label(button_frame)
@@ -164,7 +142,7 @@ class App(asynctk.AsyncTk):
         self.saved_label.pack(side=ttkc.LEFT)
 
         # Timeline and info
-        self.timeline = timeline.Timeline(self, height=50)
+        self.timeline = timeline.Timeline(self.base_frame, height=50)
         self.timeline.pack(fill=ttkc.X)
         self.timeline.position_updated_event += self.video_canvas.set_frame_pos
         self.video_canvas.frame_changing_event += self.on_frame_changing
@@ -394,10 +372,14 @@ class App(asynctk.AsyncTk):
     def render_video(self):
         if self.project:
             util.push_state_all(self, ttkc.DISABLED)
-            export_window = video_export.VideoExport(self, self.project)
-            export_window.transient(self)
+            export_window = video_export.VideoExport(self, self.project, self.last_export_file_var)
+            export_window.place(anchor=ttkc.CENTER, relx=0.5, rely=0.5, width=500)
             export_window.grab_set()
+            self.video_canvas.config(cursor='')
+            self.video_canvas.update_view()
             def done(e):
+                if self.video_canvas.winfo_exists():
+                    self.video_canvas.config(cursor='none')
                 util.pop_state_all(self)
                 export_window.grab_release()
             export_window.bind('<Destroy>', done, '+')

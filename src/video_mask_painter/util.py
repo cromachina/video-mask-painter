@@ -1,9 +1,13 @@
 import time
 import weakref
-import tkinter as tk
 import importlib.resources
 import json
 from pathlib import Path
+
+import tkinter as tk
+import ttkbootstrap as ttk
+import ttkbootstrap.constants as ttkc
+from ttkbootstrap.widgets import tooltip
 
 from pyrsistent import *
 import numpy as np
@@ -135,6 +139,29 @@ def pop_state_all(widget):
         pass
     for child in widget.winfo_children():
         pop_state_all(child)
+
+def _setup_button(button, name, icon_name, size):
+    icon = get_icon_image(icon_name, size=size, color='#ffffff')
+    button.config(image=icon)
+    button.__icon = icon
+    button.pack(side=ttkc.LEFT)
+    if name is not None:
+        tooltip.ToolTip(button, text=name)
+
+def make_button(master, name, icon_name, command, size=20):
+    button = ttk.Button(master, command=command, bootstyle='outline',)
+    _setup_button(button, name, icon_name, size)
+    return button
+
+def make_checkbutton(master, name, icon_name, variable, size=22):
+    button = ttk.Checkbutton(master, variable=variable, bootstyle='outline-toolbutton')
+    _setup_button(button, name, icon_name, size)
+    return button
+
+def make_radiobutton(master, name, icon_name, value, variable, size=22):
+    button = ttk.Radiobutton(master, value=value, variable=variable, bootstyle='outline-toolbutton')
+    _setup_button(button, name, icon_name, size)
+    return button
 
 class timeit():
     def __init__(self, name):
