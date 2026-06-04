@@ -19,6 +19,7 @@ dependencies = [
     'numpy',
     'numba',
     'pysdl2',
+    'pysdl3',
     'cairosvg',
     'opencv-python',
     'ttkbootstrap',
