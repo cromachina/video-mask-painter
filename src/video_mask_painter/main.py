@@ -88,6 +88,9 @@ class App(asynctk.AsyncTk):
         util.make_button(button_frame, 'Add blank keyframe', 'keyframe-blank', self.add_blank_keyframe)
         util.make_button(button_frame, 'Clone keyframe', 'keyframe-clone', self.clone_keyframe)
         util.make_button(button_frame, 'Delete keyframe', 'keyframe-delete', self.delete_keyframe)
+        util.make_button(button_frame, 'Cut keyframe', 'keyframe-cut', self.cut_keyframe)
+        util.make_button(button_frame, 'Copy keyframe', 'keyframe-copy', self.copy_keyframe)
+        util.make_button(button_frame, 'Paste keyframe', 'keyframe-paste', self.paste_keyframe)
 
         make_separator(button_frame)
 
@@ -164,6 +167,9 @@ class App(asynctk.AsyncTk):
         self.bind('<Control-Z>', self.redo)
         self.bind('<Control-y>', self.redo)
         self.bind('<Destroy>', self.on_destroy)
+        self.bind('<x>', self.cut_keyframe)
+        self.bind('<c>', self.copy_keyframe)
+        self.bind('<v>', self.paste_keyframe)
 
         self.stopped_event = threading.Event()
         self.last_auto_saved_id = None
@@ -195,14 +201,18 @@ class App(asynctk.AsyncTk):
                 except:
                     pass
 
+    def get_current(self):
+        index = self.video_canvas.get_frame_pos()
+        state = self.project.get_current()
+        keyframe = state.get_keyframe(index)
+        return index, state, keyframe
+
     def update_view(self):
         if self.project:
             self.timeline.clear_keyframes()
-            state = self.project.get_current()
-            for keyframe in state.keyframes:
-                self.timeline.add_keyframe(keyframe.index)
-            index = self.video_canvas.get_frame_pos()
-            keyframe = state.get_keyframe(index)
+            index, state, keyframe = self.get_current()
+            for kf in state.keyframes:
+                self.timeline.add_keyframe(kf.index)
             data = keyframe.data if keyframe else None
             self.video_canvas.set_mask_image_array(data)
             self.video_canvas.update_view()
@@ -230,9 +240,7 @@ class App(asynctk.AsyncTk):
 
     def on_drawing_started(self):
         if self.project:
-            state = self.project.get_current()
-            index = self.video_canvas.get_frame_pos()
-            keyframe = state.get_keyframe(index)
+            index, state, keyframe = self.get_current()
             mode = self.auto_keyframe_var.get()
             if keyframe:
                 if keyframe.index == index:
@@ -404,27 +412,21 @@ class App(asynctk.AsyncTk):
 
     def previous_keyframe(self, *args):
         if self.project:
-            state = self.project.get_current()
-            index = self.video_canvas.get_frame_pos()
-            keyframe = state.get_previous_keyframe(index)
+            index, state, keyframe = self.get_current()
             if not keyframe:
                 return
             self.video_canvas.set_frame_pos(keyframe.index)
 
     def next_keyframe(self, *args):
         if self.project:
-            state = self.project.get_current()
-            index = self.video_canvas.get_frame_pos()
-            keyframe = state.get_next_keyframe(index)
+            index, state, keyframe = self.get_current()
             if not keyframe:
                 return
             self.video_canvas.set_frame_pos(keyframe.index)
 
     def add_blank_keyframe(self, *args):
         if self.project:
-            index = self.video_canvas.get_frame_pos()
-            state = self.project.get_current()
-            keyframe = state.get_keyframe(index)
+            index, state, keyframe = self.get_current()
             if keyframe and keyframe.index == index:
                 return
             data = self.video_canvas.get_blank_image_array()
@@ -435,9 +437,7 @@ class App(asynctk.AsyncTk):
 
     def clone_keyframe(self):
         if self.project:
-            index = self.video_canvas.get_frame_pos()
-            state = self.project.get_current()
-            keyframe = state.get_keyframe(index)
+            index, state, keyframe = self.get_current()
             if keyframe and keyframe.index == index:
                 return
             if not keyframe:
@@ -450,12 +450,31 @@ class App(asynctk.AsyncTk):
 
     def delete_keyframe(self):
         if self.project:
-            index = self.video_canvas.get_frame_pos()
-            state = self.project.get_current()
-            keyframe = state.get_keyframe(index)
+            index, state, keyframe = self.get_current()
             if keyframe:
                 state = state.remove_keyframe(index).set(selected_index=None)
                 self.project = self.project.append(state, self.undo_limit)
+            self.update_view()
+
+    def cut_keyframe(self, *args):
+        self.copy_keyframe()
+        self.delete_keyframe()
+
+    def copy_keyframe(self, *args):
+        if self.project:
+            index, state, keyframe = self.get_current()
+            if keyframe:
+                self.project = self.project.set(copy_buffer=keyframe)
+
+    def paste_keyframe(self, *args):
+        if self.project and self.project.copy_buffer:
+            index, state, keyframe = self.get_current()
+            buffer = self.project.copy_buffer
+            if keyframe and keyframe.index == index:
+                state = state.update_keyframe(index, buffer.data)
+            else:
+                state = state.insert_keyframe(buffer.set(index=index))
+            self.project = self.project.append(state, self.undo_limit)
             self.update_view()
 
     def play_pause_video(self):

@@ -3,14 +3,13 @@ import bisect
 import zipfile
 import json
 import tempfile
+from types import NoneType
 
 from pyrsistent import *
 import numpy as np
 import cv2
 
 from . import util
-
-NoneType = type(None)
 
 def _lock_array(array:np.ndarray) -> np.ndarray:
     array.flags.writeable = False
@@ -36,7 +35,7 @@ class ProjectState(PClass):
         for keyframe in self.keyframes:
             print(keyframe.index, id(keyframe.data))
 
-    def get_keyframe(self, index):
+    def get_keyframe(self, index:int):
         if not self.keyframes:
             return None
         ix = bisect.bisect(self.keyframes, index, key=lambda x: x.index) - 1
@@ -44,7 +43,7 @@ class ProjectState(PClass):
             return None
         return self.keyframes[ix]
 
-    def get_previous_keyframe(self, index):
+    def get_previous_keyframe(self, index:int):
         if not self.keyframes:
             return None
         ix = bisect.bisect(self.keyframes, index, key=lambda x: x.index) - 1
@@ -57,7 +56,7 @@ class ProjectState(PClass):
             return None
         return self.keyframes[ix]
 
-    def get_next_keyframe(self, index):
+    def get_next_keyframe(self, index:int):
         if not self.keyframes:
             return None
         ix = bisect.bisect(self.keyframes, index, key=lambda x: x.index)
@@ -82,7 +81,7 @@ class ProjectState(PClass):
             return self
         return self.set(keyframes=self.keyframes.delete(ix))
 
-    def update_keyframe(self, index, data):
+    def update_keyframe(self, index:int, data:np.ndarray):
         keyframe = self.get_keyframe(index).set(data=data)
         return self.remove_keyframe(keyframe.index).insert_keyframe(keyframe)
 
@@ -93,6 +92,7 @@ class Project(PClass):
     current_index = field(int, initial=0)
     next_id = field(int, initial=0)
     saved_id = field([int, NoneType], initial=None)
+    copy_buffer = field([Keyframe, NoneType], initial=None)
 
     def get_current(self) -> ProjectState:
         return self.states[self.current_index]
