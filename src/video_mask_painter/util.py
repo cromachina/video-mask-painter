@@ -144,24 +144,51 @@ def _setup_button(button, name, icon_name, size):
     icon = get_icon_image(icon_name, size=size, color='#ffffff')
     button.config(image=icon)
     button.__icon = icon
-    button.pack(side=ttkc.LEFT)
     if name is not None:
         tooltip.ToolTip(button, text=name)
+    return button
 
 def make_button(master, name, icon_name, command, size=20):
-    button = ttk.Button(master, command=command, bootstyle='outline',)
-    _setup_button(button, name, icon_name, size)
-    return button
+    return _setup_button(ttk.Button(master, command=command, bootstyle='outline'), name, icon_name, size)
 
 def make_checkbutton(master, name, icon_name, variable, size=22):
-    button = ttk.Checkbutton(master, variable=variable, bootstyle='outline-toolbutton')
-    _setup_button(button, name, icon_name, size)
-    return button
+    return _setup_button(ttk.Checkbutton(master, variable=variable, bootstyle='outline-toolbutton'), name, icon_name, size)
 
 def make_radiobutton(master, name, icon_name, value, variable, size=22):
-    button = ttk.Radiobutton(master, value=value, variable=variable, bootstyle='outline-toolbutton')
-    _setup_button(button, name, icon_name, size)
-    return button
+    return _setup_button(ttk.Radiobutton(master, value=value, variable=variable, bootstyle='outline-toolbutton'), name, icon_name, size)
+
+class FlowLayout(ttk.Frame):
+    def __init__(self, master=None, **kwargs):
+        super().__init__(master, **kwargs)
+        self.master.bind('<Configure>', self._on_resize, True)
+
+    def _on_resize(self, event):
+        max_width = event.width
+        row_width = 0
+        row_height = 0
+        row_y = 0
+        row = []
+        def center():
+            x = 0
+            for child in row:
+                child.place(
+                    x=(max_width - row_width) / 2 + x,
+                    y=(row_height - child.winfo_reqheight()) / 2 + row_y,
+                )
+                x += child.winfo_reqwidth()
+            row.clear()
+        for child in self.winfo_children():
+            next_width = child.winfo_reqwidth()
+            if row_width != 0 and next_width + row_width >= max_width:
+                center()
+                row_y += row_height
+                row_width = 0
+                row_height = 0
+            row.append(child)
+            row_width += next_width
+            row_height = max(row_height, child.winfo_reqheight())
+        center()
+        self.configure(height=row_y + row_height)
 
 class timeit():
     def __init__(self, name):

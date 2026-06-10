@@ -15,8 +15,10 @@ __package__ = 'video-mask-painter'
 __version__ = importlib.metadata.version(__package__)
 
 def make_separator(master):
-    sep = ttk.Separator(master, orient=ttkc.VERTICAL)
-    sep.pack(side=ttkc.LEFT, padx=5)
+    sep_frame = ttk.Frame(master)
+    sep = ttk.Separator(sep_frame, orient=ttkc.VERTICAL)
+    sep.pack(padx=5)
+    return sep_frame
 
 def load_settings(file_name:str):
     file_path = Path.home() / file_name
@@ -64,8 +66,8 @@ class App(asynctk.AsyncTk):
         self.video_canvas.pack(fill=ttkc.BOTH, expand=True)
 
         # Project Buttons
-        button_frame = ttk.Frame(self.base_frame)
-        button_frame.pack()
+        button_frame = util.FlowLayout(self.base_frame)
+        button_frame.pack(fill=ttkc.X)
         util.make_button(button_frame, 'Undo', 'undo', self.undo)
         util.make_button(button_frame, 'Redo', 'redo', self.redo)
 
@@ -95,56 +97,53 @@ class App(asynctk.AsyncTk):
         make_separator(button_frame)
 
         # Auto-keyframe radio
-        radio_frame = ttk.Frame(button_frame)
-        radio_frame.pack(fill=ttkc.X, side=ttkc.LEFT)
         self.auto_keyframe_off = 'off'
         self.auto_keyframe_blank = 'blank'
         self.auto_keyframe_clone = 'clone'
         self.auto_keyframe_var = ttk.StringVar(value=self.auto_keyframe_off)
-        util.make_radiobutton(radio_frame, 'Toggle auto-keyframe off', 'auto-keyframe-off', self.auto_keyframe_off, self.auto_keyframe_var)
-        util.make_radiobutton(radio_frame, 'Toggle auto-keyframe blank', 'auto-keyframe-blank', self.auto_keyframe_blank, self.auto_keyframe_var)
-        util.make_radiobutton(radio_frame, 'Toggle auto-keyframe clone', 'auto-keyframe-clone', self.auto_keyframe_clone, self.auto_keyframe_var)
+        util.make_radiobutton(button_frame, 'Toggle auto-keyframe off', 'auto-keyframe-off', self.auto_keyframe_off, self.auto_keyframe_var)
+        util.make_radiobutton(button_frame, 'Toggle auto-keyframe blank', 'auto-keyframe-blank', self.auto_keyframe_blank, self.auto_keyframe_var)
+        util.make_radiobutton(button_frame, 'Toggle auto-keyframe clone', 'auto-keyframe-clone', self.auto_keyframe_clone, self.auto_keyframe_var)
 
         make_separator(button_frame)
 
         # Drawing mode radio
-        radio_frame = ttk.Frame(button_frame)
-        radio_frame.pack(fill=ttkc.X, side=ttkc.LEFT)
         self.drawing_mode_draw = 'draw'
         self.drawing_mode_erase = 'erase'
         self.drawing_mode_var = ttk.StringVar(value=self.drawing_mode_draw)
-        util.make_radiobutton(radio_frame, 'Toggle draw', 'draw', self.drawing_mode_draw, self.drawing_mode_var)
-        util.make_radiobutton(radio_frame, 'Toggle erase', 'erase', self.drawing_mode_erase, self.drawing_mode_var)
+        util.make_radiobutton(button_frame, 'Toggle draw', 'draw', self.drawing_mode_draw, self.drawing_mode_var)
+        util.make_radiobutton(button_frame, 'Toggle erase', 'erase', self.drawing_mode_erase, self.drawing_mode_var)
         self.drawing_mode_var.trace_add('write', self.on_drawing_mode_changed)
 
         # Brush size selector
+        brush_scale_frame = ttk.Frame(button_frame)
         brush_scale = bar_scale.BarScale(
-            button_frame, label='Brush size', value=self.brush_size_var.get(), minval=1, maxval=1000,
+            brush_scale_frame, label='Brush size', value=self.brush_size_var.get(), minval=1, maxval=1000,
             scale_type=bar_scale.BarScale.CURVE, height=30, width=150)
-        brush_scale.pack(side=ttkc.LEFT, padx=5)
+        brush_scale.pack(padx=5)
         brush_scale.value_updated_event += self.video_canvas.set_brush_size
         brush_scale.value_updated_event += lambda v: self.brush_size_var.set(int(v))
         brush_scale.update_stopped_event += self.video_canvas.hide_cursor
 
         # Mask tint selector
         self.color_picker = color_picker.ColorPickerHover(button_frame, self.mask_color_var.get(), self.mask_alpha_var.get(), height=30, width=40)
-        self.color_picker.pack(side=ttkc.LEFT)
         self.color_picker.color_selected_event += self.video_canvas.set_mask_color
         self.color_picker.alpha_selected_event += self.video_canvas.set_mask_alpha
         self.color_picker.color_selected_event += lambda v: self.mask_color_var.set(tuple(v))
         self.color_picker.alpha_selected_event += self.mask_alpha_var.set
 
-        button_frame = ttk.Frame(self.base_frame)
-        button_frame.pack()
+        # Information labels
+        label_frame = ttk.Frame(self.base_frame)
+        label_frame.pack()
 
-        self.time_label = ttk.Label(button_frame)
+        self.time_label = ttk.Label(label_frame)
         self.time_label.pack(side=ttkc.LEFT)
-        self.video_file_name_label = ttk.Label(button_frame)
+        self.video_file_name_label = ttk.Label(label_frame)
         self.video_file_name_label.pack(side=ttkc.LEFT)
-        self.saved_label = ttk.Label(button_frame, width=2)
+        self.saved_label = ttk.Label(label_frame, width=2)
         self.saved_label.pack(side=ttkc.LEFT)
 
-        # Timeline and info
+        # Timeline
         self.timeline = timeline.Timeline(self.base_frame, height=50)
         self.timeline.pack(fill=ttkc.X)
         self.timeline.position_updated_event += self.video_canvas.set_frame_pos
