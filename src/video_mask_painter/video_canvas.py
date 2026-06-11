@@ -140,7 +140,7 @@ class VideoCanvas(tk.Frame):
         self._sdl_window.renderer.clear(sdl2.ext.Color(*clear_color))
         if self._video:
             canvas_size = np.array((self.winfo_width(), self.winfo_height()))
-            image_size = util.swap(np.array(self._video_texture.get_size()))
+            image_size = np.array(self._video_texture.get_size())
             offset = (-image_size * 0.5 + self._view_position) * zoom + canvas_size * 0.5
             size = image_size * zoom
             rect = (*offset, *size)
@@ -207,14 +207,6 @@ class VideoCanvas(tk.Frame):
         delta = (current_pos - self._last_mouse_pos) / zoom
         self._view_position += delta
 
-    def _mouse_to_view(self, vec:np.ndarray) -> np.ndarray:
-        zoom = self._get_zoom_factor()
-        canvas_h = self.winfo_height()
-        canvas_w = self.winfo_width()
-        canvas_size = np.array((canvas_w, canvas_h))
-        image_size = np.array(self._video_image_array.shape[:2])
-        return (vec - (canvas_size / 2)) / zoom + (image_size / 2) - self._view_position
-
     def reset_view(self):
         self._zoom_level = _default_zoom_level
         self._view_position = np.array((0.0, 0.0))
@@ -222,6 +214,14 @@ class VideoCanvas(tk.Frame):
 
     ###########################################################################
     ## Mask drawing
+
+    def _mouse_to_view(self, mouse_pos:np.ndarray) -> np.ndarray:
+        zoom = self._get_zoom_factor()
+        canvas_h = self.winfo_height()
+        canvas_w = self.winfo_width()
+        canvas_size = np.array((canvas_w, canvas_h))
+        image_size = util.swap(self._video_image_array.shape[:2])
+        return (mouse_pos - (canvas_size / 2)) / zoom + (image_size / 2) - self._view_position
 
     def _on_draw_start(self, event:tk.Event):
         if not self._video or self._mask_image_array is None:
