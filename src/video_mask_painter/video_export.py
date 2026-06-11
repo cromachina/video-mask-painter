@@ -1,9 +1,10 @@
 import asyncio
 import threading
+import multiprocessing as mp
+from multiprocessing import connection
 import queue
 from pathlib import Path
 
-import tkinter as tk
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 from tkinter import filedialog
@@ -47,7 +48,97 @@ void main() {
 }
 '''
 
-_vertices = np.array([-1, -1, 3, -1, -1, 3], dtype=np.float32)
+def _export_mosaic(proj:project.Project, output_path:Path, mosaic_percent:float, running_callback, progress_callback) -> None:
+    state = proj.get_current()
+    input = cv2.VideoCapture(str(proj.video_file_path))
+    fps = int(input.get(cv2.CAP_PROP_FPS))
+    frame_count = input.get(cv2.CAP_PROP_FRAME_COUNT)
+    size = int(input.get(cv2.CAP_PROP_FRAME_WIDTH)), int(input.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    output = cv2.VideoWriter(str(output_path.with_suffix('.mp4')), cv2.VideoWriter.fourcc(*'avc1'), fps, size)
+
+    ctx = moderngl.create_context(require=460, standalone=True)
+    prog = ctx.program(vertex_shader=_vert_shader, fragment_shader=_mosaic_shader)
+    vertices = np.array([-1, -1, 3, -1, -1, 3], dtype=np.float32)
+    vbo = ctx.buffer(vertices)
+    vao = ctx.vertex_array(prog, vbo, 'position')
+    frame_tex = ctx.texture(size, 3, dtype='nu1')
+    mask_tex = ctx.texture(size, 1, dtype='nu1')
+    output_tex = ctx.texture(size, 3, dtype='nu1')
+    fbo = ctx.framebuffer(color_attachments=[output_tex])
+    fbo.use()
+    prog['target'] = 0
+    prog['mask'] = 1
+    prog['texture_size'] = size
+    min_dim = max(4, int(min(size) * (mosaic_percent / 100)))
+    prog['mosaic_size'] = min_dim
+    frame_tex.use(0)
+    mask_tex.use(1)
+
+    mask_shape  = tuple(util.swap(size)) + (1,)
+    color_shape = tuple(util.swap(size)) + (3,)
+    blank = np.full(mask_shape, 0, dtype=np.ubyte)
+    frame_data = None
+    mask_data = blank
+    frame_index = 0
+
+    send_queue = queue.SimpleQueue()
+    return_queue = queue.SimpleQueue()
+    # Balance between speed and memory usage.
+    buffer_queue_count = 10
+    for i in range(buffer_queue_count):
+        return_queue.put(np.empty(color_shape, dtype=np.ubyte))
+
+    def run_writer_thread():
+        while True:
+            data = send_queue.get()
+            if data is None:
+                return
+            output.write(data)
+            return_queue.put(data)
+            if frame_index % 10 or frame_index == frame_count:
+                progress_callback((frame_index, frame_count))
+
+    writer_thread = threading.Thread(target=run_writer_thread)
+    writer_thread.start()
+    buffer = np.empty(color_shape, dtype=np.ubyte)
+
+    while running_callback():
+        res, frame_data = input.read(frame_data)
+        if not res:
+            break
+        frame_tex.write(frame_data)
+        frame_index = int(input.get(cv2.CAP_PROP_POS_FRAMES))
+        keyframe = state.get_keyframe(frame_index)
+        if keyframe is None:
+            next_mask = blank
+        else:
+            next_mask = keyframe.data
+        if next_mask is not mask_data:
+            mask_data = next_mask
+            mask_tex.write(mask_data)
+        vao.render()
+        buffer = return_queue.get()
+        fbo.read_into(buffer)
+        send_queue.put(buffer)
+    send_queue.put(None)
+    writer_thread.join()
+
+    input.release()
+    output.release()
+    ctx.release()
+
+def _export_mosaic_proc(proj:project.Project, output_path:Path, mosaic_percent:float, conn:connection.Connection):
+    try:
+        _export_mosaic(
+            proj,
+            output_path,
+            mosaic_percent,
+            lambda: not conn.poll(0),
+            lambda x: conn.send(x))
+    except Exception as ex:
+        print(ex)
+    finally:
+        conn.close()
 
 class VideoExport(ttk.Frame):
     def __init__(self, master, proj:project.Project, export_file_var=None, *args, **kwargs):
@@ -126,86 +217,35 @@ class VideoExport(ttk.Frame):
     def _export_mosaic(self, output_path:Path, mosaic_percent:float, progress_callback) -> None:
         if not self._project:
             return
-        state = self._project.get_current()
-        input_file = self._project.video_file_path
-        input = cv2.VideoCapture(str(input_file))
-        fps = int(input.get(cv2.CAP_PROP_FPS))
-        frame_count = input.get(cv2.CAP_PROP_FRAME_COUNT)
-        size = int(input.get(cv2.CAP_PROP_FRAME_WIDTH)), int(input.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        output = cv2.VideoWriter(str(output_path.with_suffix('.mp4')), cv2.VideoWriter.fourcc(*'avc1'), fps, size)
-
-        ctx = moderngl.create_context(require=460, standalone=True)
-        prog = ctx.program(vertex_shader=_vert_shader, fragment_shader=_mosaic_shader)
-        vbo = ctx.buffer(_vertices)
-        vao = ctx.vertex_array(prog, vbo, 'position')
-        frame_tex = ctx.texture(size, 3, dtype='nu1')
-        mask_tex = ctx.texture(size, 1, dtype='nu1')
-        output_tex = ctx.texture(size, 3, dtype='nu1')
-        fbo = ctx.framebuffer(color_attachments=[output_tex])
-        fbo.use()
-        prog['target'] = 0
-        prog['mask'] = 1
-        prog['texture_size'] = size
-        min_dim = max(4, int(min(size) * (mosaic_percent / 100)))
-        prog['mosaic_size'] = min_dim
-        frame_tex.use(0)
-        mask_tex.use(1)
-        vao.render()
-
-        mask_shape  = tuple(util.swap(size)) + (1,)
-        color_shape = tuple(util.swap(size)) + (3,)
-        blank = np.full(mask_shape, 0, dtype=np.ubyte)
-        frame_data = None
-        mask_data = blank
-        frame_index = 0
-
-        send_queue = queue.Queue()
-        return_queue = queue.Queue()
-        # Balance between speed and memory usage.
-        buffer_queue_count = 10
-        for i in range(buffer_queue_count):
-            return_queue.put(np.empty(color_shape, dtype=np.ubyte))
-
-        def run_writer_thread():
+        parent_conn, child_conn = mp.Pipe()
+        mp.set_start_method('spawn')
+        proc = mp.Process(target=_export_mosaic_proc, args=(
+            self._project,
+            output_path,
+            mosaic_percent,
+            child_conn,
+        ))
+        try:
+            proc.start()
+            child_conn.close()
             while True:
-                data = send_queue.get()
-                if data is None:
-                    return
-                output.write(data)
-                return_queue.put(data)
-                try:
-                    progress_callback(frame_index, frame_count)
-                except:
-                    pass
-
-        writer_thread = threading.Thread(target=run_writer_thread)
-        writer_thread.start()
-        buffer = np.empty(color_shape, dtype=np.ubyte)
-
-        while self._thread_running:
-            res, frame_data = input.read(frame_data)
-            if not res:
-                break
-            frame_tex.write(frame_data)
-            frame_index = input.get(cv2.CAP_PROP_POS_FRAMES)
-            keyframe = state.get_keyframe(frame_index)
-            if keyframe is None:
-                next_mask = blank
-            else:
-                next_mask = keyframe.data
-            if next_mask is not mask_data:
-                mask_data = next_mask
-                mask_tex.write(mask_data)
-            vao.render()
-            buffer = return_queue.get()
-            fbo.read_into(buffer)
-            send_queue.put(buffer)
-        send_queue.put(None)
-        writer_thread.join()
-
-        input.release()
-        output.release()
-        ctx.release()
+                data = parent_conn.recv()
+                progress_callback(*data)
+                if self._thread_running == False:
+                    parent_conn.send(None)
+                    break
+                if not proc.is_alive():
+                    break
+        except EOFError:
+            pass
+        except Exception as ex:
+            print(ex)
+            proc.kill()
+        finally:
+            proc.join()
+            proc.close()
+            parent_conn.close()
+            child_conn.close()
 
     def _export_mask(self, output_path:Path, progress_callback):
         if not self._project:
