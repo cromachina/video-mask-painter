@@ -74,6 +74,10 @@ class App(asynctk.AsyncTk):
         toggle_auto_keyframe_clone_action = self.action_runner.add_action(action.Action('Toggle auto-keyframe clone', [{'t'}],'auto-keyframe-clone'))
         toggle_draw_action = self.action_runner.add_action(action.Action('Toggle draw', [{'1'}], 'draw'))
         toggle_erase_action = self.action_runner.add_action(action.Action('Toggle erase', [{'2'}], 'erase'))
+        incr_brush_size_fast_action =  self.action_runner.add_action(action.Action('Increment brush size (fast)'))
+        decr_brush_size_fast_action =  self.action_runner.add_action(action.Action('Decrement brush size (fast)'))
+        incr_brush_size_slow_action =  self.action_runner.add_action(action.Action('Increment brush size (slow)'))
+        decr_brush_size_slow_action =  self.action_runner.add_action(action.Action('Decrement brush size (slow)'))
 
         self.geometry(self.win_geometry_var.get())
 
@@ -163,6 +167,10 @@ class App(asynctk.AsyncTk):
         brush_scale.value_updated_event += self.video_canvas.set_brush_size
         brush_scale.value_updated_event += lambda v: self.brush_size_var.set(int(v))
         brush_scale.update_stopped_event += self.video_canvas.hide_cursor
+        incr_brush_size_fast_action.trigger += brush_scale.incr_value_fast
+        decr_brush_size_fast_action.trigger += brush_scale.decr_value_fast
+        incr_brush_size_slow_action.trigger += brush_scale.incr_value_slow
+        decr_brush_size_slow_action.trigger += brush_scale.decr_value_slow
 
         # Mask tint selector
         self.color_picker = color_picker.ColorPickerHover(button_frame, self.mask_color_var.get(), self.mask_alpha_var.get(), height=30, width=40)

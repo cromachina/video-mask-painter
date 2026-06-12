@@ -70,7 +70,6 @@ class ActionRunner():
         return action
 
     def _trigger_shortcut(self, next_shortcut, event:tk.Event):
-        print(self._shortcut, next_shortcut)
         shortcut_changed = next_shortcut != self._shortcut
         for action in self._actions:
             for shortcut in action.shortcuts:

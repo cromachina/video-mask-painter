@@ -123,7 +123,7 @@ class BarScale(ttk.Canvas):
         self.update_stopped_event()
         return "break"
 
-    def _on_motion(self, event:tk.Entry):
+    def _on_motion(self, event:tk.Event):
         w = self.winfo_width()
         if self._dragging:
             self._bar_value = event.x / w
@@ -135,17 +135,34 @@ class BarScale(ttk.Canvas):
             self._update_value_view()
         self._last_x = event.x
 
-    def _on_incr_value(self, event:tk.Entry):
+    def _on_incr_value(self, event:tk.Event):
         self.set_value(self._value + 1)
         return "break"
 
-    def _on_decr_value(self, event:tk.Entry):
+    def _on_decr_value(self, event:tk.Event):
         self.set_value(self._value - 1)
         return "break"
 
-    def _on_mousewheel(self, event:tk.Entry):
+    def _on_mousewheel(self, event:tk.Event):
         if event.delta > 0:
             self._on_incr_value()
         else:
             self._on_decr_value()
         return "break"
+
+    def _set_bar_value(self, value):
+        self._bar_value += value
+        self._value = self._bar_position_to_value(self._bar_value)
+        self._update_value_view()
+
+    def incr_value_fast(self, event:tk.Event):
+        self._set_bar_value(0.05)
+
+    def decr_value_fast(self, event:tk.Event):
+        self._set_bar_value(-0.05)
+
+    def incr_value_slow(self, event:tk.Event):
+        self._set_bar_value(0.01)
+
+    def decr_value_slow(self, event:tk.Event):
+        self._set_bar_value(-0.01)
