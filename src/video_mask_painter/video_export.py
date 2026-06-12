@@ -76,7 +76,7 @@ def _export_mosaic(proj:project.Project, output_path:Path, mosaic_percent:float,
 
     mask_shape  = tuple(util.swap(size)) + (1,)
     color_shape = tuple(util.swap(size)) + (3,)
-    blank = np.full(mask_shape, 0, dtype=np.ubyte)
+    blank = np.full(mask_shape, 0, dtype=np.uint8)
     frame_data = None
     mask_data = blank
     frame_index = 0
@@ -86,7 +86,7 @@ def _export_mosaic(proj:project.Project, output_path:Path, mosaic_percent:float,
     # Balance between speed and memory usage.
     buffer_queue_count = 10
     for i in range(buffer_queue_count):
-        return_queue.put(np.empty(color_shape, dtype=np.ubyte))
+        return_queue.put(np.empty(color_shape, dtype=np.uint8))
 
     def run_writer_thread():
         while True:
@@ -100,7 +100,7 @@ def _export_mosaic(proj:project.Project, output_path:Path, mosaic_percent:float,
 
     writer_thread = threading.Thread(target=run_writer_thread)
     writer_thread.start()
-    buffer = np.empty(color_shape, dtype=np.ubyte)
+    buffer = np.empty(color_shape, dtype=np.uint8)
 
     while running_callback():
         res, frame_data = input.read(frame_data)
@@ -253,7 +253,7 @@ class VideoExport(ttk.Frame):
         input.release()
         output = cv2.VideoWriter(str(output_path.with_suffix('.mp4')), cv2.VideoWriter.fourcc(*'avc1'), fps, size)
         frame_index = 0
-        blank = np.full(tuple(util.swap(size)) + (3,), 0, dtype=np.ubyte)
+        blank = np.full(tuple(util.swap(size)) + (3,), 0, dtype=np.uint8)
         mask_data = blank
         last_keyframe = None
         while self._thread_running and frame_index < frame_count:

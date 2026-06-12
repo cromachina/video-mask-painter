@@ -81,25 +81,6 @@ def get_icon_image(name, size, color):
 def add_tag(widget:tk.Widget, tag):
     widget.bindtags((tag,) + widget.bindtags())
 
-def push_state_all(widget, state, modal_widget=None):
-    if widget is modal_widget:
-        return
-    try:
-        widget.__state = widget.config('state')
-        widget.config(state=state)
-    except:
-        pass
-    for child in widget.winfo_children():
-        push_state_all(child, state, modal_widget)
-
-def pop_state_all(widget):
-    try:
-        widget.config(state=widget.__state)
-    except:
-        pass
-    for child in widget.winfo_children():
-        pop_state_all(child)
-
 def _setup_button(button, name, icon_name, size):
     icon = get_icon_image(icon_name, size=size, color='#ffffff')
     button.config(image=icon)

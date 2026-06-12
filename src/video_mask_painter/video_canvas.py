@@ -311,7 +311,7 @@ class VideoCanvas(tk.Frame):
     def get_blank_image_array(self) -> np.ndarray | None:
         if self._video:
             size = self.get_video_size()
-            data = np.full(size + (1,), fill_value=0x00, dtype=np.ubyte)
+            data = np.full(size + (1,), fill_value=0x00, dtype=np.uint8)
             return data
 
     def _regenerate_brush_texture(self):
@@ -323,7 +323,7 @@ class VideoCanvas(tk.Frame):
         self._brush_texture = self._sdl_window.create_texture((tex_size, tex_size))
         sdl2.SDL_SetTextureBlendMode(self._brush_texture.get(), sdl2.SDL_BLENDMODE_BLEND)
         sdl2.SDL_SetTextureColorMod(self._brush_texture.get(), 0, 0, 0)
-        array = np.zeros((tex_size, tex_size, 1), dtype=np.ubyte)
+        array = np.zeros((tex_size, tex_size, 1), dtype=np.uint8)
         cv2.circle(
             array, center=tex_center, radius=radius,
             color=0xff, thickness=1, lineType=cv2.LINE_AA)

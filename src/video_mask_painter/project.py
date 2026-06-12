@@ -93,6 +93,7 @@ class Project(PClass):
     next_id = field(int, initial=0)
     saved_id = field([int, NoneType], initial=None)
     copy_buffer = field([Keyframe, NoneType], initial=None)
+    state_limit = field([int, NoneType], initial=None)
 
     def get_current(self) -> ProjectState:
         return self.states[self.current_index]
@@ -104,12 +105,12 @@ class Project(PClass):
     def get_current_id(self):
         return self.states[self.current_index].id
 
-    def append(self, state:ProjectState, state_limit:int|None=None):
+    def push(self, state:ProjectState):
         state = state.set(id=self.next_id)
         next_id = self.next_id + 1
         states = self.states[:self.current_index + 1].append(state)
-        if state_limit is not None and len(states) > state_limit:
-            delta = len(states) - state_limit
+        if self.state_limit is not None and len(states) > self.state_limit:
+            delta = len(states) - self.state_limit
             states = states[delta:]
         current_index = len(states) - 1
         return self.set(next_id=next_id, states=states, current_index=current_index)
@@ -168,7 +169,7 @@ def load_project(file_path:Path) -> Project:
                 continue
             index = int(sub_file_path.name)
             data = zfile.read(sub_file)
-            data = cv2.imdecode(np.frombuffer(data, dtype=np.ubyte), cv2.IMREAD_GRAYSCALE)
+            data = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
             data = data.reshape(data.shape + (1,))
             state = state.insert_keyframe(Keyframe(index=index, data=data))
         return Project(

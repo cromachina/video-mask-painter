@@ -3,11 +3,12 @@ from pathlib import Path
 import tempfile
 import threading
 
-import tkinter as tk
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 from tkinter import filedialog
 from ttkbootstrap import dialogs
+
+import numpy as np
 
 from . import asynctk, util, video_canvas, project, timeline, bar_scale, color_picker, video_export, action
 
@@ -20,7 +21,7 @@ def make_separator(master):
 class App(asynctk.AsyncTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.title(f'{__package__} {util.__version__}')
+        self.title(f'{util.__package__} {util.__version__}')
         ttk.Style('darkly')
 
         self.win_geometry_var = util.settings.get('win_geometry', "1200x800")
@@ -67,8 +68,8 @@ class App(asynctk.AsyncTk):
         delete_keyframe_action = self.action_runner.add_action(action.Action('Delete keyframe', [{'g'}], 'keyframe-delete'))
         cut_keyframe_action = self.action_runner.add_action(action.Action('Cut keyframe', [{'x'}], 'keyframe-cut'))
         copy_keyframe_action = self.action_runner.add_action(action.Action('Copy keyframe', [{'c'}],'keyframe-copy'))
-        paste_keyframe_action = self.action_runner.add_action(action.Action('Paste keyframe', [{'v'}], 'keyframe-cut'))
-        paste_keyframe_into_action = self.action_runner.add_action(action.Action('Paste keyframe', [{'b'}], 'keyframe-cut'))
+        paste_keyframe_action = self.action_runner.add_action(action.Action('Paste keyframe', [{'v'}], 'keyframe-paste'))
+        paste_merge_keyframe_action = self.action_runner.add_action(action.Action('Paste merge keyframe', [{'b'}], 'keyframe-paste-merge'))
         toggle_auto_keyframe_off_action = self.action_runner.add_action(action.Action('Toggle auto-keyframe off', [{'e'}],'auto-keyframe-off'))
         toggle_auto_keyframe_blank_action = self.action_runner.add_action(action.Action('Toggle auto-keyframe blank', [{'r'}],'auto-keyframe-blank'))
         toggle_auto_keyframe_clone_action = self.action_runner.add_action(action.Action('Toggle auto-keyframe clone', [{'t'}],'auto-keyframe-clone'))
@@ -136,6 +137,7 @@ class App(asynctk.AsyncTk):
         make_action_button(button_frame, cut_keyframe_action, self.cut_keyframe)
         make_action_button(button_frame, copy_keyframe_action, self.copy_keyframe)
         make_action_button(button_frame, paste_keyframe_action, self.paste_keyframe)
+        make_action_button(button_frame, paste_merge_keyframe_action, self.paste_merge_keyframe)
 
         make_separator(button_frame)
 
@@ -277,7 +279,7 @@ class App(asynctk.AsyncTk):
                 return
             index = self.video_canvas.get_frame_pos()
             state = self.project.get_current().update_keyframe(index, data).set(selected_index=index)
-            self.project = self.project.append(state, self.undo_limit)
+            self.project = self.project.push(state)
             self.update_saved_label()
 
     def load_video(self, file_path:Path):
@@ -313,7 +315,7 @@ class App(asynctk.AsyncTk):
         if file_path:
             file_path = Path(file_path)
             self.last_open_dir_var.set(str(file_path.parent))
-            self.project = project.Project(video_file_path=file_path).set_saved()
+            self.project = project.Project(video_file_path=file_path, state_limit=self.undo_limit).set_saved()
             self.last_auto_saved_id = None
             self.update_saved_label()
             self.load_video(self.project.video_file_path)
@@ -344,7 +346,7 @@ class App(asynctk.AsyncTk):
         if file_path:
             file_path = Path(file_path)
             self.last_open_dir_var.set(str(file_path.parent))
-            self.project = project.load_project(file_path)
+            self.project = project.load_project(file_path).set(state_limit=self.undo_limit)
             self.last_auto_saved_id = None
             self.update_saved_label()
             try:
@@ -469,7 +471,7 @@ class App(asynctk.AsyncTk):
             data = self.video_canvas.get_blank_image_array()
             keyframe = project.Keyframe(index=index, data=data)
             state = state.insert_keyframe(keyframe).set(selected_index=index)
-            self.project = self.project.append(state, self.undo_limit)
+            self.project = self.project.push(state)
             self.update_view()
 
     def clone_keyframe(self, *_):
@@ -482,7 +484,7 @@ class App(asynctk.AsyncTk):
                 return
             keyframe = keyframe.set(index=index)
             state = state.insert_keyframe(keyframe).set(selected_index=index)
-            self.project = self.project.append(state, self.undo_limit)
+            self.project = self.project.push(state)
             self.update_view()
 
     def delete_keyframe(self, *_):
@@ -490,7 +492,7 @@ class App(asynctk.AsyncTk):
             index, state, keyframe = self.get_current()
             if keyframe:
                 state = state.remove_keyframe(index).set(selected_index=None)
-                self.project = self.project.append(state, self.undo_limit)
+                self.project = self.project.push(state)
             self.update_view()
 
     def cut_keyframe(self, *_):
@@ -511,13 +513,23 @@ class App(asynctk.AsyncTk):
                 state = state.update_keyframe(index, buffer.data)
             else:
                 state = state.insert_keyframe(buffer.set(index=index))
-            self.project = self.project.append(state, self.undo_limit)
+            self.project = self.project.push(state)
             self.update_view()
 
-    def paste_keyframe_into(self, *_):
+    def paste_merge_keyframe(self, *_):
         if self.project and self.project.copy_buffer:
             index, state, keyframe = self.get_current()
             buffer = self.project.copy_buffer
+            if keyframe:
+                data = np.maximum(keyframe.data, buffer.data)
+                if keyframe.index == index:
+                    state = state.update_keyframe(index, data)
+                else:
+                    state = state.insert_keyframe(project.Keyframe(index=index, data=data))
+            else:
+                state = state.insert_keyframe(buffer.set(index=index))
+            self.project = self.project.push(state)
+            self.update_view()
 
     def play_pause_video(self, *_):
         if self.video_canvas.is_playing():

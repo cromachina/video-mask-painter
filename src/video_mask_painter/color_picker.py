@@ -15,7 +15,7 @@ def _make_sat_value_gradient(width, height, tint):
     sat = np.tile(np.linspace((1, 1, 1), tint, width), (height, 1)).reshape(height, width, 3)
     val = np.linspace((1, 1, 1), (0, 0, 0), height).repeat(width, axis=0).reshape(height, width, 3)
     res = sat * val
-    return (res * 255).astype(np.ubyte)
+    return (res * 255).astype(np.uint8)
 
 def _make_checkers(col_a, col_b, checksize, width, height):
     a = np.full((checksize, checksize, 1), col_a)
@@ -29,7 +29,7 @@ def _make_alpha_gradient(width, height, tint):
     alpha = np.linspace(1.0, 0.0, height).repeat(width, axis=0).reshape(height, width, 1)
     check = _make_checkers(*_checker_params, width, height)
     res = color * alpha + check * (1 - alpha)
-    return (res * 255).astype(np.ubyte)
+    return (res * 255).astype(np.uint8)
 
 def _make_hue_gradient(width, height):
     hue = np.linspace(0, 1, height)
@@ -37,13 +37,13 @@ def _make_hue_gradient(width, height):
     for i in range(len(hue)):
         res[i] = colorsys.hsv_to_rgb(hue[i], 1, 1)
     res = res.repeat(width, axis=0).reshape(height, width, 3)
-    return (res * 255).astype(np.ubyte)
+    return (res * 255).astype(np.uint8)
 
 def _make_color_preview(width, height, color, alpha):
     color = np.full((height, width, 3), fill_value=color)
     check = _make_checkers(*_checker_params, width, height)
     res = color * alpha + check * (1 - alpha)
-    return (res * 255).astype(np.ubyte)
+    return (res * 255).astype(np.uint8)
 
 def _color_to_position(color):
     h, s, v = colorsys.rgb_to_hsv(*map(lambda x: x / 255.0, color))
@@ -110,7 +110,7 @@ class ColorBox(ttk.Canvas):
     def get_color(self) -> None:
         s, v = self._selector_pos
         v = 1 - v
-        return (np.array(colorsys.hsv_to_rgb(self._hue, s, v)) * 255.0).astype(np.ubyte)
+        return (np.array(colorsys.hsv_to_rgb(self._hue, s, v)) * 255.0).astype(np.uint8)
 
     def set_color(self, color):
         h, s, v = _color_to_position(color)
