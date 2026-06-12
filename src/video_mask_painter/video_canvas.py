@@ -11,7 +11,7 @@ from sdl2.ext.window import _check_video_init
 from sdl2.ext.err import raise_sdl_err
 import ctypes
 
-from . import util
+from . import util, action
 
 sdl2.ext.init()
 
@@ -102,18 +102,25 @@ class VideoCanvas(tk.Frame):
         self._task = asyncio.create_task(self._video_play_task())
         self.bind('<Configure>', self._on_resize)
         self.bind('<Destroy>', self._on_destroy)
-        self.bind('<Button-1>', self._on_draw_start)
-        self.bind('<ButtonRelease-1>', self._on_draw_stop)
-        self.bind('<Button-3>', self._on_pan_start)
-        self.bind('<ButtonRelease-3>', self._on_pan_stop)
-        self.bind('<Motion>', self._on_mouse_move)
-        self.bind('<MouseWheel>', self._on_mousewheel)
-        self.bind('<Button-4>', lambda *_: self.previous_frame())
-        self.bind('<Button-5>', lambda *_: self.next_frame())
-        self.bind('<Control-Button-4>', self._on_zoom_in)
-        self.bind('<Control-Button-5>', self._on_zoom_out)
         self.bind('<Enter>', self._on_mouse_enter)
         self.bind('<Leave>', self._on_mouse_leave)
+        self.bind('<Motion>', self._on_mouse_move)
+        draw_action = action.Action('Draw', [{'mouse1'}])
+        draw_action.trigger += self._on_draw_start
+        draw_action.trigger_release += self._on_draw_stop
+        pan_action = action.Action('Pan', [{'mouse3'}])
+        pan_action.trigger += self._on_pan_start
+        pan_action.trigger_release += self._on_pan_stop
+        zoom_in_action = action.Action('Zoom in', [{'control', 'mouse4'}])
+        zoom_in_action.trigger += self._on_zoom_in
+        zoom_out_action = action.Action('Zoom out', [{'control', 'mouse5'}])
+        zoom_out_action.trigger += self._on_zoom_out
+        self.action_runner = action.ActionRunner(self, [
+            draw_action,
+            pan_action,
+            zoom_in_action,
+            zoom_out_action,
+        ])
         self.winfo_toplevel().update_hook += self._update_view
         self.frame_changing_event = util.Observable()
         self.drawing_started_event = util.Observable()
@@ -188,6 +195,8 @@ class VideoCanvas(tk.Frame):
         self.update_view()
 
     def _on_pan_start(self, event:tk.Event):
+        if self._panning_view:
+            return
         self._panning_view = True
         # BUG: Changing cursor causes the SDL window to flicker or momentarily stop drawing.
         # It cannot be changed with SDL_SetCursor.
@@ -224,7 +233,7 @@ class VideoCanvas(tk.Frame):
         return (mouse_pos - (canvas_size / 2)) / zoom + (image_size / 2) - self._view_position
 
     def _on_draw_start(self, event:tk.Event):
-        if not self._video or self._mask_image_array is None:
+        if not self._video or self._mask_image_array is None or self._drawing:
             return
         self.pause()
         self.show_cursor()
@@ -362,12 +371,6 @@ class VideoCanvas(tk.Frame):
         self.frame_changing_event(self.get_frame_pos())
         self.update_view()
         return True
-
-    def _on_mousewheel(self, event:tk.Event):
-        if event.delta > 0:
-            self.next_frame()
-        else:
-            self.previous_frame()
 
     def open_video(self, file_path:Path):
         self.close_video()

@@ -141,23 +141,15 @@ def _export_mosaic_proc(proj:project.Project, output_path:Path, mosaic_percent:f
         conn.close()
 
 class VideoExport(ttk.Frame):
-    def __init__(self, master, proj:project.Project, export_file_var=None, *args, **kwargs):
+    def __init__(self, master, app, *args, **kwargs):
         super().__init__(master=master, padding=3, *args, **kwargs)
-        self._project = proj
-        title_frame = ttk.Frame(self, height=25)
-        label = ttk.Label(title_frame, text='Render video')
-        label.place(anchor=ttkc.CENTER, relx=0.5, rely=0.5)
-        button = util.make_button(title_frame, None, 'keyframe-delete', self.destroy)
-        button.configure(bootstyle=ttkc.FLAT)
-        button.place(anchor=ttkc.E, relx=1.0, rely=0.5)
-
+        self._app = app
         frame = ttk.Frame(self)
         label = ttk.Label(frame, text='Output file:')
         label.pack(side=ttkc.LEFT)
-        self._export_file_var = ttk.StringVar()
-        if export_file_var:
-            self._export_file_var.set(export_file_var.get())
-            self._export_file_var.trace_add('write', lambda *_: export_file_var.set(self._export_file_var.get()))
+        self._export_file_box = util.settings.get('last_export_file', '')
+        self._export_file_var = ttk.StringVar(self, self._export_file_box.get())
+        self._export_file_var.trace_add('write', lambda *_: self._export_file_box.set(self._export_file_var.get()))
         file_entry = ttk.Entry(frame, textvariable=self._export_file_var)
         file_entry.pack(side=ttkc.LEFT, fill=ttkc.X, expand=True)
         file_select_button = ttk.Button(frame, text='Select', command=self._on_file_selected)
@@ -215,12 +207,13 @@ class VideoExport(ttk.Frame):
         self._loop.call_soon_threadsafe(self._update_progress, *args)
 
     def _export_mosaic(self, output_path:Path, mosaic_percent:float, progress_callback) -> None:
-        if not self._project:
+        proj = self.app.project
+        if not proj:
             return
         parent_conn, child_conn = mp.Pipe()
         mp.set_start_method('spawn')
         proc = mp.Process(target=_export_mosaic_proc, args=(
-            self._project,
+            proj,
             output_path,
             mosaic_percent,
             child_conn,
@@ -248,10 +241,11 @@ class VideoExport(ttk.Frame):
             child_conn.close()
 
     def _export_mask(self, output_path:Path, progress_callback):
-        if not self._project:
+        proj = self.app.project
+        if not proj:
             return
-        input_file = self._project.video_file_path
-        state = self._project.get_current()
+        input_file = proj.video_file_path
+        state = proj.get_current()
         input = cv2.VideoCapture(str(input_file))
         fps = int(input.get(cv2.CAP_PROP_FPS))
         frame_count = input.get(cv2.CAP_PROP_FRAME_COUNT)

@@ -17,7 +17,6 @@ readme = 'README.md'
 requires-python = '>=3.13'
 dependencies = [
     'numpy',
-    'numba',
     'pysdl2',
     'cairosvg',
     'opencv-python',

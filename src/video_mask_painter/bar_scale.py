@@ -106,18 +106,22 @@ class BarScale(ttk.Canvas):
         self._last_x = event.x
         self._dragging = True
         self._on_motion(event)
+        return "break"
 
     def _on_drag_stop(self, event:tk.Event):
         self._dragging = False
         self.update_stopped_event()
+        return "break"
 
     def _on_precise_drag_start(self, event:tk.Event):
         self._last_x = event.x
         self._precise_dragging = True
+        return "break"
 
     def _on_precise_drag_stop(self, event:tk.Event):
         self._precise_dragging = False
         self.update_stopped_event()
+        return "break"
 
     def _on_motion(self, event:tk.Entry):
         w = self.winfo_width()
@@ -133,12 +137,15 @@ class BarScale(ttk.Canvas):
 
     def _on_incr_value(self, event:tk.Entry):
         self.set_value(self._value + 1)
+        return "break"
 
     def _on_decr_value(self, event:tk.Entry):
         self.set_value(self._value - 1)
+        return "break"
 
     def _on_mousewheel(self, event:tk.Entry):
         if event.delta > 0:
             self._on_incr_value()
         else:
             self._on_decr_value()
+        return "break"

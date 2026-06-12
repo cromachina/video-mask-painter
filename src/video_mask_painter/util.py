@@ -1,7 +1,8 @@
 import time
 import weakref
 import importlib.resources
-import json
+import importlib.metadata
+import pickle
 from pathlib import Path
 
 import tkinter as tk
@@ -11,17 +12,16 @@ from ttkbootstrap.widgets import tooltip
 
 from pyrsistent import *
 import numpy as np
-import cv2
-import numba
 import cairosvg
 
 from . import icons
 
-@numba.vectorize
+__package__ = 'video-mask-painter'
+__version__ = importlib.metadata.version(__package__)
+
 def lerp(a, b, t):
     return (b - a) * t + a
 
-@numba.vectorize
 def bilinear(a, b, c, t):
     ab = lerp(a, b, t)
     bc = lerp(b, c, t)
@@ -67,48 +67,6 @@ def event_vec(event:tk.Event):
 def swap(vec):
     return np.array((vec[1], vec[0]))
 
-_rangemax = np.int16(0x3fff)
-
-@numba.njit
-def to_short_array(value):
-    value = value.astype(np.short)
-    return (value << 6) | (value >> 2)
-
-@numba.njit
-def to_byte_array(value):
-    return (value >> 6).astype(np.ubyte)
-
-@numba.njit
-def to_short(value):
-    value = np.short(value)
-    return (value << 6) | (value >> 2)
-
-@numba.njit
-def to_byte(value):
-    return np.ubyte(value >> 6)
-
-@numba.njit
-def mul(a, b):
-    return (a * b) >> 14
-
-@numba.vectorize
-def lerp_ubyte(a, b, t):
-    a = to_short(a)
-    b = to_short(b)
-    t = to_short(t)
-    return to_byte(mul(b - a, t) + a)
-
-def mosaic(image, mask, mosaic_percent, out=None):
-    original_size = swap(image.shape[:2])
-    min_dim = int(min(original_size) * (mosaic_percent / 100))
-    min_dim = max(4, min_dim)
-    scale_dimension = (original_size[0] // min_dim, original_size[1] // min_dim)
-    mosaic_image = cv2.resize(image, scale_dimension, interpolation=cv2.INTER_AREA)
-    if out is None:
-        out = np.empty_like(image)
-    mosaic_image = cv2.resize(mosaic_image, original_size, out, interpolation=cv2.INTER_NEAREST).reshape(image.shape)
-    return lerp_ubyte(image, mosaic_image, mask)
-
 def numpy_to_photoimage(array:np.ndarray):
     h, w = array.shape[:2]
     ppm_header = f'P6 {w} {h} 255 '.encode()
@@ -123,14 +81,16 @@ def get_icon_image(name, size, color):
 def add_tag(widget:tk.Widget, tag):
     widget.bindtags((tag,) + widget.bindtags())
 
-def push_state_all(widget, state):
+def push_state_all(widget, state, modal_widget=None):
+    if widget is modal_widget:
+        return
     try:
         widget.__state = widget.config('state')
         widget.config(state=state)
     except:
         pass
     for child in widget.winfo_children():
-        push_state_all(child, state)
+        push_state_all(child, state, modal_widget)
 
 def pop_state_all(widget):
     try:
@@ -258,26 +218,21 @@ class Box():
     def get(self):
         return self._value
 
-def serialize_numpy_number(obj):
-    if  np.issubdtype(np.array(obj).dtype.type, np.integer):
-        return obj.item()
-    elif  np.issubdtype(np.array(obj).dtype.type, np.floating):
-        return obj.item()
-    else:
-        raise TypeError(obj)
-
 class Settings:
     def __init__(self, file_name):
         self._file_path = Path.home() / file_name
         self._data = {}
         self._vars = {}
-        if self._file_path.exists():
-            with self._file_path.open() as fp:
-                self._data = json.load(fp)
-                for item in self._data.items():
-                    self.get(*item)
+        try:
+            if self._file_path.exists():
+                with self._file_path.open('rb') as fp:
+                    self._data = pickle.load(fp)
+                    for item in self._data.items():
+                        self.get(*item)
+        except Exception as ex:
+            print(ex)
 
-    def get(self, key, default) -> tk.Variable:
+    def get(self, key, default) -> Box:
         if key in self._vars:
             return self._vars.get(key)
         var = Box(default)
@@ -288,5 +243,7 @@ class Settings:
         return var
 
     def save(self):
-        with self._file_path.open('w') as fp:
-            json.dump(self._data, fp, default=serialize_numpy_number)
+        with self._file_path.open('wb') as fp:
+            pickle.dump(self._data, fp)
+
+settings = Settings(f'.{__package__}')
