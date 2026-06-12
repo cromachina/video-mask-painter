@@ -411,14 +411,18 @@ class App(asynctk.AsyncTk):
 
     def previous_keyframe(self, *args):
         if self.project:
-            index, state, keyframe = self.get_current()
+            index = self.video_canvas.get_frame_pos()
+            state = self.project.get_current()
+            keyframe = state.get_previous_keyframe(index)
             if not keyframe:
                 return
             self.video_canvas.set_frame_pos(keyframe.index)
 
     def next_keyframe(self, *args):
         if self.project:
-            index, state, keyframe = self.get_current()
+            index = self.video_canvas.get_frame_pos()
+            state = self.project.get_current()
+            keyframe = state.get_next_keyframe(index)
             if not keyframe:
                 return
             self.video_canvas.set_frame_pos(keyframe.index)
