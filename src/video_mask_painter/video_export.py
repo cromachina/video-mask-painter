@@ -207,7 +207,7 @@ class VideoExport(ttk.Frame):
         self._loop.call_soon_threadsafe(self._update_progress, *args)
 
     def _export_mosaic(self, output_path:Path, mosaic_percent:float, progress_callback) -> None:
-        proj = self.app.project
+        proj = self._app.project
         if not proj:
             return
         parent_conn, child_conn = mp.Pipe()
@@ -241,7 +241,7 @@ class VideoExport(ttk.Frame):
             child_conn.close()
 
     def _export_mask(self, output_path:Path, progress_callback):
-        proj = self.app.project
+        proj = self._app.project
         if not proj:
             return
         input_file = proj.video_file_path
