@@ -6,10 +6,11 @@ import numpy as np
 
 from . import util
 
-_power_points = [
-    np.array((0, 0)),
-    np.array((1, 0)),
-    np.array((1, 1.01)),
+_bezier_points = [
+    np.array((0.0, 0.0)),
+    np.array((0.9, 0.0)),
+    np.array((1.0, 0.1)),
+    np.array((1.0, 1.01)),
 ]
 
 class BarScale(ttk.Canvas):
@@ -74,14 +75,14 @@ class BarScale(ttk.Canvas):
     def _value_to_bar_position(self, value):
         if self._scale_type == self.CURVE:
             y = value / (self._maxval - self._minval)
-            bar_value = util.inverse_quadratic_bezier(*_power_points, util.clamp(0, 1, y))
+            bar_value = util.inverse_bezier(_bezier_points, util.clamp(0, 1, y))
         else:
             bar_value = value / (self._maxval - self._minval)
         return util.clamp(0, 1, bar_value)
 
     def _bar_position_to_value(self, bar_value):
         if self._scale_type == self.CURVE:
-            value = (self._maxval - self._minval) * util.quadratic_bezier(*_power_points, util.clamp(0, 1, bar_value))
+            value = (self._maxval - self._minval) * util.bezier(_bezier_points, util.clamp(0, 1, bar_value))[1]
         else:
             value = (self._maxval - self._minval) * bar_value
         return util.clamp(self._minval, self._maxval, value)
@@ -151,15 +152,15 @@ class BarScale(ttk.Canvas):
         return "break"
 
     def _set_bar_value(self, value):
-        self._bar_value += value
+        self._bar_value = util.clamp(0, 1, self._bar_value + value)
         self._value = self._bar_position_to_value(self._bar_value)
         self._update_value_view()
 
     def incr_value_fast(self, event:tk.Event):
-        self._set_bar_value(0.05)
+        self._set_bar_value(0.03)
 
     def decr_value_fast(self, event:tk.Event):
-        self._set_bar_value(-0.05)
+        self._set_bar_value(-0.03)
 
     def incr_value_slow(self, event:tk.Event):
         self._set_bar_value(0.01)

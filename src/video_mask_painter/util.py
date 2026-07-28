@@ -4,6 +4,7 @@ import importlib.resources
 import importlib.metadata
 import pickle
 from pathlib import Path
+import itertools
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -22,11 +23,6 @@ __version__ = importlib.metadata.version(__package__)
 def lerp(a, b, t):
     return (b - a) * t + a
 
-def bilinear(a, b, c, t):
-    ab = lerp(a, b, t)
-    bc = lerp(b, c, t)
-    return lerp(ab, bc, t)
-
 def secant_method(f, x0=0, x1=1, iters=20):
     for _ in range(iters):
         f0 = f(x0)
@@ -37,11 +33,16 @@ def secant_method(f, x0=0, x1=1, iters=20):
         x0, x1 = x1, x2
     return x2
 
-def quadratic_bezier(a, b, c, t):
-    return bilinear(a, b, c, t)[1]
+def bezier(points, t):
+    if len(points) == 1:
+        return points[0]
+    next_points = []
+    for a, b in itertools.pairwise(points):
+        next_points.append(lerp(a, b, t))
+    return bezier(next_points, t)
 
-def inverse_quadratic_bezier(a, b, c, value):
-    return secant_method(lambda x: quadratic_bezier(a, b, c, x) - value)
+def inverse_bezier(points, value):
+    return secant_method(lambda x: bezier(points, x)[1] - value)
 
 def clamp(min_val, max_val, val):
     return max(min_val, min(max_val, val))
