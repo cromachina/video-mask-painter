@@ -1,9 +1,9 @@
 import asyncio
-import tkinter as tk
+import ttkbootstrap as ttk
 
 from . import util
 
-class AsyncTk(tk.Tk):
+class AsyncTk(ttk.App):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.protocol('WM_DELETE_WINDOW', self.close_requested)

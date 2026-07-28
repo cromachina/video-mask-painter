@@ -2,7 +2,6 @@ import tkinter as tk
 
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
-from ttkbootstrap import scrolled
 from pyrsistent import *
 
 from . import util
@@ -165,7 +164,7 @@ class ShortcutKeyEntry(ttk.Entry):
         self.var.set(' '.join(self._value))
 
     def _finish_selection(self):
-        self.config(bootstyle=ttkc.NORMAL)
+        self.config(bootstyle=ttkc.PRIMARY)
         self.grab_release()
         self.edit_finished_event()
 
@@ -218,39 +217,10 @@ class ActionEdit(ttk.Frame):
         button = util.make_button(row, 'Delete shortcut', 'delete', delete_shortcut, 16)
         button.pack(side=ttkc.RIGHT)
 
-# BUG Fixes an issue with ScrolledFrame https://github.com/israel-dryer/ttkbootstrap/pull/1064
-class PatchedScrolledFrame(scrolled.ScrolledFrame):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._scroll_enabled = True
-
-    def _add_scroll_binding(self, parent):
-        if not self._scroll_enabled:
-            return
-        return super()._add_scroll_binding(parent)
-
-    def enable_scrolling(self):
-        self._scroll_enabled = True
-        return super().enable_scrolling()
-
-    def disable_scrolling(self):
-        self._scroll_enabled = False
-        return super().disable_scrolling()
-
-    def _on_enter(self, event) -> None:
-        self._add_scroll_binding(self)
-        if self.autohide:
-            self.show_scrollbars()
-
-    def _on_leave(self, event) -> None:
-        self._del_scroll_binding(self)
-        if self.autohide:
-            self.hide_scrollbars()
-
 class KeybindSettings(ttk.Frame):
     def __init__(self, master, actions:list[Action], *args, **kwargs):
         super().__init__(master=master, padding=3, *args, **kwargs)
-        scroll_area = PatchedScrolledFrame(self)
+        scroll_area = ttk.ScrolledFrame(self)
         scroll_area.pack(fill=ttkc.BOTH, expand=True)
         for action in actions:
             edit = ActionEdit(scroll_area, action)

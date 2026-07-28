@@ -22,7 +22,7 @@ class App(asynctk.AsyncTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title(f'{util.__package__} {util.__version__}')
-        ttk.Style('darkly')
+        self.theme_use('bootstrap-dark')
 
         self.win_geometry_var = util.settings.get('win_geometry', "1200x800")
         self.mask_color_var = util.settings.get('mask_color', (0, 0, 255))
