@@ -34,12 +34,10 @@ def secant_method(f, x0=0, x1=1, iters=20):
     return x2
 
 def bezier(points, t):
-    if len(points) == 1:
-        return points[0]
-    next_points = []
-    for a, b in itertools.pairwise(points):
-        next_points.append(lerp(a, b, t))
-    return bezier(next_points, t)
+    f = lambda p: lerp(*p, t)
+    while len(points) > 1:
+        points = list(map(f, itertools.pairwise(points)))
+    return points[0]
 
 def inverse_bezier(points, value):
     return secant_method(lambda x: bezier(points, x)[1] - value)
