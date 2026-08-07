@@ -289,8 +289,9 @@ class VideoCanvas(tk.Frame):
 
     def _on_mouse_leave(self, event:tk.Event):
         self._mouse_inside = False
-        if not self._drawing:
-            self.hide_cursor()
+        # BUG XFCE with X11 will cause the cursor to flicker because leave/enter is erroneously triggered for Tk.
+        # if not self._drawing:
+        #     self.hide_cursor()
         self.update_view()
 
     def set_drawing_mode(self):
