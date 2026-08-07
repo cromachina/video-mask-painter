@@ -97,7 +97,7 @@ class App(asynctk.AsyncTk):
         add_menu_action(file_menu, save_project_action, self.save_project)
         add_menu_action(file_menu, save_as_project_action, self.save_as_project)
         add_menu_action(file_menu, set_project_video_action, self.set_project_video)
-        add_menu_action(file_menu, exit_action, self.close_requested)
+        add_menu_action(file_menu, exit_action, self.exit)
         add_menu_action(menubar, render_video_action, self.render_video)
         add_menu_action(menubar, shortcut_keys_action, self.shortcut_keys)
 
@@ -321,8 +321,7 @@ class App(asynctk.AsyncTk):
             self.load_video(self.project.video_file_path)
             self.add_blank_keyframe()
 
-    @saved_check('exiting')
-    def close_requested(self, *_):
+    def cleanup(self):
         self.win_geometry_var.set(self.winfo_geometry())
         util.settings.save()
         self.stopped_event.set()
@@ -334,7 +333,10 @@ class App(asynctk.AsyncTk):
                     print(ex)
                 except:
                     pass
-        super().close_requested()
+
+    @saved_check('exiting')
+    def exit(self, *_):
+        self.stop()
 
     @saved_check('opening')
     def open_project_from_dir(self, dir:Path):

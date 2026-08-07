@@ -1,30 +1,45 @@
 import asyncio
+import time
+import contextlib
 import ttkbootstrap as ttk
 
 from . import util
 
+@contextlib.asynccontextmanager
+async def sync_interval(interval):
+    start = time.perf_counter()
+    try:
+        yield
+    except Exception as ex:
+        raise ex
+    else:
+        delta = time.perf_counter() - start
+        sleep_time = interval - delta
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
+
 class AsyncTk(ttk.App):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.protocol('WM_DELETE_WINDOW', self.close_requested)
+        self.protocol('WM_DELETE_WINDOW', self.stop)
         self.running = False
-        self.sleep_time = 1.0 / 60.0
+        self.update_interval = 1.0 / 60
         self.update_hook = util.Observable()
 
-    def close_requested(self):
-        self.stop()
+    def cleanup(self):
+        pass
 
     def stop(self):
         self.running = False
+        self.cleanup()
 
     async def async_main_loop(self):
         self.running = True
         while self.running:
-            self.update()
-            self.update_idletasks()
-            self.update_hook.call_catch()
-            await asyncio.sleep(0)
-        self.destroy()
+            async with sync_interval(self.update_interval):
+                self.update()
+                self.update_hook.call_catch()
+                await asyncio.sleep(0)
 
 class AsyncTkCallback:
     tasks = set()
