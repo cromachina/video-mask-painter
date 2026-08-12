@@ -137,7 +137,7 @@ class Project(PClass):
         return self.set(saved_id=None)
 
 project_extension = '.vmp'
-project_file_types = (('VMP', f'*{project_extension}*'), ('Any', '*.*'))
+project_file_types = (('VMP', f'*{project_extension}*'), ('Any', '*'))
 
 def save_project(project:Project, file_path:Path):
     with (tempfile.NamedTemporaryFile(dir=file_path.parent, prefix=file_path.name, delete=False, delete_on_close=False) as temp,
