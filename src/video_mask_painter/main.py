@@ -20,7 +20,7 @@ def make_separator(master):
 
 class App(asynctk.AsyncTk):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, className=util.__package__, **kwargs)
         self.title(f'{util.__package__} {util.__version__}')
         self.theme_use('bootstrap-dark')
 
