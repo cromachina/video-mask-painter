@@ -97,7 +97,7 @@ class App(asynctk.AsyncTk):
         add_menu_action(file_menu, save_project_action, self.save_project)
         add_menu_action(file_menu, save_as_project_action, self.save_as_project)
         add_menu_action(file_menu, set_project_video_action, self.set_project_video)
-        add_menu_action(file_menu, exit_action, self.exit)
+        add_menu_action(file_menu, exit_action, self.stop)
         add_menu_action(menubar, render_video_action, self.render_video)
         add_menu_action(menubar, shortcut_keys_action, self.shortcut_keys)
 
@@ -335,8 +335,8 @@ class App(asynctk.AsyncTk):
                     pass
 
     @saved_check('exiting')
-    def exit(self, *_):
-        self.stop()
+    def stop(self, *_):
+        super().stop()
 
     @saved_check('opening')
     def open_project_from_dir(self, dir:Path):
