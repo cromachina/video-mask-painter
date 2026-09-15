@@ -12,7 +12,7 @@
     let
       pkgs = nixpkgs.legacyPackages.${system};
       lib = pkgs.lib;
-      python = pkgs.python313;
+      python = pkgs.python314;
       pyPkgs = python.pkgs;
       pyproject = fromTOML (builtins.readFile ./pyproject.toml);
       project = pyproject.project;

@@ -63,12 +63,27 @@ class ActionRunner():
         self._widget.bind('<ButtonRelease>', self._on_button_release)
         self._widget.bind('<MouseWheel>', self._on_mousewheel)
         self._key_release_idle = None
+        self._should_clear_shortcut = False
+        self._during_trigger = False
+
+    # Modal file dialogs can cause missed events, getting keys stuck.
+    # Call when using a modal file dialog.
+    def clear_shortcut(self):
+        if self._during_trigger:
+            self._should_clear_shortcut = True
+        else:
+            self._clear_shortcut_data()
+
+    def _clear_shortcut_data(self):
+        self._shortcut = pset()
+        self._released_keys = pset()
 
     def add_action(self, action:Action):
         self._actions.append(action)
         return action
 
     def _trigger_shortcut(self, next_shortcut, event:tk.Event):
+        self._during_trigger = True
         shortcut_changed = next_shortcut != self._shortcut
         for action in self._actions:
             for shortcut in action.shortcuts:
@@ -79,6 +94,10 @@ class ActionRunner():
                 if shortcut == next_shortcut:
                     action.trigger(event)
         self._shortcut = next_shortcut
+        self._during_trigger = False
+        if self._should_clear_shortcut:
+            self._should_clear_shortcut = False
+            self._clear_shortcut_data()
 
     def _on_key(self, event:tk.Event):
         shortcut = self._shortcut

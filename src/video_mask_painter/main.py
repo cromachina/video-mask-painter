@@ -307,6 +307,7 @@ class App(asynctk.AsyncTk):
 
     @saved_check('opening')
     def open_video(self, *_):
+        self.action_runner.clear_shortcut()
         file_path = filedialog.askopenfilename(
             title='Open Video',
             filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
@@ -340,6 +341,7 @@ class App(asynctk.AsyncTk):
 
     @saved_check('opening')
     def open_project_from_dir(self, dir:Path):
+        self.action_runner.clear_shortcut()
         file_path = filedialog.askopenfilename(
             title='Open Project',
             filetypes=project.project_file_types,
@@ -379,6 +381,7 @@ class App(asynctk.AsyncTk):
 
     def save_as_project(self, *_):
         if self.project:
+            self.action_runner.clear_shortcut()
             file_path = filedialog.asksaveasfilename(
                 title='Save As',
                 filetypes=project.project_file_types,
@@ -395,6 +398,7 @@ class App(asynctk.AsyncTk):
 
     def set_project_video(self, *_):
         if self.project:
+            self.action_runner.clear_shortcut()
             file_path = filedialog.askopenfilename(
                 title='Set Project Video',
                 filetypes=(('MP4', '*.mp4'), ('Any', '*.*')),
@@ -556,3 +560,6 @@ async def async_main():
 
 def main():
     asyncio.run(async_main())
+
+if __name__ == '__main__':
+    main()
