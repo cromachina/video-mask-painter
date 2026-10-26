@@ -133,6 +133,7 @@ class ActionRunner():
     def _on_mousewheel(self, event:tk.Event):
         event.num = 5 if event.delta > 0 else 4
         self._on_button(event)
+        self._widget.after(0, lambda: self._on_button_release(event))
 
 class ShortcutKeyEntry(ttk.Entry):
     def __init__(self, master, initial_value:set, *args, **kwargs):
